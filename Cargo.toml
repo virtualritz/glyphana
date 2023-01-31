@@ -1,15 +1,14 @@
 [package]
-name = "eframe_template"
+name = "glyphana"
 version = "0.1.0"
-authors = ["Emil Ernerfeldt <emil.ernerfeldt@gmail.com>"]
+authors = ["Moritz Moeller <virtualritz@gmail.com>"]
 edition = "2021"
-rust-version = "1.65"
 
 
 [dependencies]
-egui = "0.20.0"
-eframe = { version = "0.20.0", default-features = false, features = [
-    "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
+egui = { path = "../egui/crates/egui" }
+eframe = { path = "../egui/crates/eframe", default-features = false, features = [
+    #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
@@ -17,6 +16,12 @@ eframe = { version = "0.20.0", default-features = false, features = [
 
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
+unicode-blocks = "0.1.5"
+enum_dispatch = "0.3.11"
+ahash = "0.8.2"
+emath = "0.20.0"
+epaint = "0.20.0"
+unicode_names2 = "0.6.0"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -24,10 +29,9 @@ tracing-subscriber = "0.3"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.6"
+console_error_panic_hook = "0.1.7"
 tracing-wasm = "0.2"
 wasm-bindgen-futures = "0.4"
-
 
 [profile.release]
 opt-level = 2 # fast and small wasm
@@ -35,7 +39,6 @@ opt-level = 2 # fast and small wasm
 # Optimize all dependencies even in debug builds:
 [profile.dev.package."*"]
 opt-level = 2
-
 
 [patch.crates-io]
 

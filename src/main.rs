@@ -1,4 +1,4 @@
-#![warn(clippy::all, rust_2018_idioms)]
+#![warn(clippy::all)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 // When compiling natively:
@@ -9,9 +9,9 @@ fn main() {
 
     let native_options = eframe::NativeOptions::default();
     eframe::run_native(
-        "eframe template",
+        "Glyphana",
         native_options,
-        Box::new(|cc| Box::new(eframe_template::TemplateApp::new(cc))),
+        Box::new(|creation_context| Box::new(glyphana::GlyphanaApp::new(creation_context))),
     );
 }
 
