@@ -1,22 +1,33 @@
-use ahash::AHashSet as HashSet;
-use egui::{pos2, vec2, Color32, Frame, Painter, Pos2, Rect, Shape, Stroke, Ui, Vec2};
+use ahash::AHashMap as HashMap;
+use egui::{Color32, Painter};
 use enum_dispatch::enum_dispatch;
+use log::{info, warn};
 use std::collections::BTreeMap;
 use unicode_blocks as ub;
+
+use crate::*;
 
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 // if we add new fields, give them default values when deserializing old state
 #[serde(default)]
 pub struct GlyphanaApp {
+    // The category the user selected for inspection.
+    //selected_category: usize;
     // The character the user selected for inspection.
     selected_char: char,
     // The string the user entered into the search field.
     search_text: String,
+    // Whether to onlky search in the subsets selected on the left panel.
+    search_only_categories: bool,
+    // Search only the glyph's name.
+    search_only_name: bool,
+    // if search is case sensitive
+    case_sensitive: bool,
     #[serde(skip)]
-    font_id: egui::FontId,
+    default_font_id: egui::FontId,
     #[serde(skip)]
-    categories: Vec<(String, UnicodeCategory)>,
+    categories: Vec<(String, UnicodeCategory, bool)>,
     #[serde(skip)]
     named_chars: BTreeMap<egui::FontFamily, BTreeMap<char, String>>,
 }
@@ -60,14 +71,15 @@ impl CharacterInspector for UnicodeMultiBlock {
     }
 }
 
-struct UnicodeCollection(HashSet<char>);
+struct UnicodeCollection(HashMap<char, String>);
 
 impl CharacterInspector for UnicodeCollection {
     fn characters(&self) -> Vec<char> {
-        self.0.iter().map(|&c| c).collect()
+        self.0.iter().map(|(&c, _)| c).collect()
     }
+
     fn contains(&self, c: char) -> bool {
-        self.0.contains(&c)
+        self.0.get(&c).is_some()
     }
 }
 
@@ -83,34 +95,56 @@ impl Default for GlyphanaApp {
         Self {
             selected_char: Default::default(),
             search_text: Default::default(),
-            font_id: egui::FontId::proportional(18.0),
+            search_only_categories: false,
+            case_sensitive: false,
+            search_only_name: false,
+            default_font_id: egui::FontId::new(18.0, egui::FontFamily::Name(NOTO_SANS.into())),
             categories: vec![
                 (
+                    "Favorites".to_string(),
+                    UnicodeCategory::Collection(UnicodeCollection(HashMap::new())),
+                    false,
+                ),
+                /*(
                     ub::ARROWS.name().to_string(),
                     UnicodeCategory::Block(ub::ARROWS),
-                ),
+                    false,
+                ),*/
                 //(ub::PARENTHESES.name().to_string(), vec![ub::PARENTHESES])
                 (
                     "Punctuation".to_string(),
-                    UnicodeCategory::Block(ub::GENERAL_PUNCTUATION),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::GENERAL_PUNCTUATION,
+                        ub::SUPPLEMENTAL_PUNCTUATION,
+                    ])),
+                    false,
                 ),
                 (
                     ub::CURRENCY_SYMBOLS.name().to_string(),
                     UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
+                    false,
                 ),
                 //(ub::PICTOGRAPHS.name().to_string(), vec![ub::PICTOGRAPHS]),
                 (
                     ub::LETTERLIKE_SYMBOLS.name().to_string(),
                     UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
+                    false,
                 ),
-                (
+                /*(
                     ub::EMOTICONS.name().to_string(),
                     UnicodeCategory::Block(ub::EMOTICONS),
+                    false,
                 ),
                 (
                     ub::DINGBATS.name().to_string(),
                     UnicodeCategory::Block(ub::DINGBATS),
+                    false,
                 ),
+                (
+                    ub::MATHEMATICAL_OPERATORS.name().to_string(),
+                    UnicodeCategory::Block(ub::MATHEMATICAL_OPERATORS),
+                    false,
+                ),*/
             ],
             named_chars: Default::default(),
         }
@@ -123,13 +157,72 @@ impl GlyphanaApp {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
+        // Start with the default fonts (we will be adding to them rather than replacing them).
+        let mut fonts = egui::FontDefinitions::default();
+
+        // Install my own font (maybe supporting non-latin characters).
+        // .ttf and .otf files supported.
+        fonts.font_data.insert(
+            NOTO_SANS.to_owned(),
+            egui::FontData::from_static(NOTO_SANS_FONT),
+        );
+
+        fonts.font_data.insert(
+            NOTO_SANS_MATH.to_owned(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoSansMath-Regular.ttf")),
+        );
+
+        // Put the font first (highest priority) for proportional text.
+        fonts
+            .families
+            .entry(egui::FontFamily::Name(NOTO_SANS.into()))
+            .or_default()
+            .insert(0, NOTO_SANS.to_owned());
+
+        fonts
+            .families
+            .entry(egui::FontFamily::Name(NOTO_SANS_MATH.into()))
+            .or_default()
+            .insert(0, NOTO_SANS_MATH.to_owned());
+
+        // Put my font as last fallback for monospace:
+        /*fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .push("noto-sans".to_owned());*/
+
+        // Tell egui to use these fonts
+        cc.egui_ctx.set_fonts(fonts);
+
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+        } else {
+            Default::default()
         }
+    }
 
-        Default::default()
+    fn available_characters(
+        &self,
+        ui: &egui::Ui,
+        family: egui::FontFamily,
+    ) -> BTreeMap<char, String> {
+        info!("Running available_characters");
+        ui.fonts(|f| {
+            f.lock()
+                .fonts
+                .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
+                .characters()
+                .iter()
+                .filter(|chr| !chr.is_whitespace() && !chr.is_ascii_control())
+                .map(|&chr| {
+                    println!("{}", chr);
+                    (chr, char_name(chr))
+                })
+                .collect()
+        })
     }
 }
 
@@ -140,16 +233,10 @@ impl eframe::App for GlyphanaApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
+        // let mut named_chars = &mut BTreeMap::<char, std::string::String>::new();
 
-        let mut named_chars = &mut BTreeMap::<char, std::string::String>::new();
-
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+        egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button(format!("{}", super::HAMBURGER), |ui| {
@@ -165,139 +252,105 @@ impl eframe::App for GlyphanaApp {
                     ui.text_edit_singleline(&mut self.search_text)
                             //.desired_width(120.0))
                             ;
-                    self.search_text = self.search_text.to_lowercase();
-                    ui.button(format!("{}", super::MAGNIFIER));
-
+                    if !self.case_sensitive {
+                        self.search_text = self.search_text.to_lowercase();
+                    }
+                    ui.toggle_value(
+                        &mut self.search_only_name,
+                        format!("{}", super::DOCUMENT_WITH_TEXT),
+                    );
+                    ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"));
                 });
-
-                named_chars = self
-                    .named_chars
-                    .entry(self.font_id.family.clone())
-                    .or_insert_with(|| available_characters(ui, self.font_id.family.clone()));
             });
         });
 
-
-        egui::SidePanel::left("category_panel").show(ctx, |ui| {
-            ui.selectable_label(false, "Favorites");
+        egui::SidePanel::left("categories").show(ctx, |ui| {
+            ui.toggle_value(&mut self.categories[0].2, "Favorites");
 
             ui.separator();
 
-            for category in &self.categories {
-                ui.selectable_label(false, &category.0);
+            for category in &mut self.categories[1..] {
+                ui.toggle_value(&mut category.2, &category.0);
             }
         });
 
-        egui::SidePanel::right("character_panel").show(ctx, |ui| {
-            let scale = 3.0;
+        egui::SidePanel::right("character_preview").show(ctx, |ui| {
+            //egui::ScrollArea::vertical().show(ui, |ui| {
+            //let (id, rect) = ui.allocate_space(egui::vec2(50.0, 50.0));
 
-            /*
-            let painter = Painter::new(
-                ui.ctx().clone(),
-                ui.layer_id(),
-                ui.available_rect_before_wrap(),
-            );
+            //let painter = ui.painter();
 
-            self.paint(&painter);
+            /*let painter = Painter::new(
+                ctx.clone(),
+                egui::LayerId::new(egui::Order::Foreground, id),
+                rect,
+            );*/
 
-            // Make sure we allocate what we used (everything)
-            ui.expand_to_include_rect(painter.clip_rect());*/
+            let scale = 256.0;
 
-            let color = if ui.visuals().dark_mode {
-                Color32::from_additive_luminance(196)
-            } else {
-                Color32::from_black_alpha(240)
-            };
+            let (response, painter) =
+                ui.allocate_painter(egui::Vec2::new(scale, 1.5 * scale), egui::Sense::click());
+            //let painter =
+            //Painter::new(ctx.clone(), ui.layer_id(), ui.available_rect_before_wrap());
 
-            /*Frame::canvas(ui.style()).show(ui, |ui| {
-                ui.ctx().request_repaint();
-                let time = ui.input().time;
+            self.paint_glyph(scale * 0.8, ui, response, painter);
 
-                let desired_size = ui.available_width() * vec2(1.0, 0.35);
-                let (_id, rect) = ui.allocate_space(desired_size);
-
-                let to_screen = emath::RectTransform::from_to(
-                    Rect::from_x_y_ranges(0.0..=1.0, -1.0..=1.0),
-                    rect,
-                );
-
-                let mut shapes = vec![epaint::Shape];
-
-                ui.painter().extend(shapes);
-            });*/
-
-            //RichText::new("&").size(20.0);
-
-            //let (response, painter) =
-            //    ui.allocate_painter(Vec2::new(ui.available_width(), 300.0), Sense::hover());
-
-            //Shape::text("g").scale(scale).build(ui);
-            /*
-            // here you can get the font_metrics
-
-            let path = "assets/NotoSans-Regular.ttf";
-            let File { mut fonts } = File::open(path).unwrap();
-            let font = fonts[0];
-            let glyph = font.draw('&').unwrap().unwrap();
-
-            if let Some(metrics) = state.font_metrics {
-                let width = metrics.left_side_bearing + metrics.right_side_bearing;
-                let height = metrics.ascender - metrics.descender;
-
-                egui::Rect::new()
-                    .w_h(width * scale, height * scale)
-                    .build(ui, || {
-                        egui::Text::new("g")
-                            .scale(scale)
-                            .build(ui);
-
-                        egui::Line::new()
-                            .start(0.0, metrics.ascender * scale)
-                            .end(width * scale, metrics.ascender * scale)
-                            .build(ui);
-
-                        egui::Line::new()
-                            .start(0.0, metrics.cap_height * scale)
-                            .end(width * scale, metrics.cap_height * scale)
-                            .build(ui);
-
-                        egui::Line::new()
-                            .start(0.0, metrics.baseline * scale)
-                            .end(width * scale, metrics.baseline * scale)
-                            .build(ui);
-                    });
-                */
+            //})
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            let named_chars = self
+                .named_chars
+                .entry(self.default_font_id.family.clone())
+                .or_insert_with(|| available_characters(ui, self.default_font_id.family.clone()));
+
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     ui.spacing_mut().item_spacing = egui::Vec2::splat(2.0);
 
                     for (&chr, name) in named_chars {
-                        if self.search_text.is_empty()
+                        if (self.search_text.is_empty()
                             || name.contains(&self.search_text)
-                            || *self.search_text == chr.to_string()
+                            || self.search_text.contains(chr)
+                            || glyph_names::glyph_name(chr as _).contains(&self.search_text))
+                            && (self
+                                .categories
+                                .iter()
+                                .filter(|cat| cat.2)
+                                .fold(false, |contained, cat| contained || cat.1.contains(chr))
+                                // If no category is selected display all glyphs in the font
+                                || self
+                                    .categories
+                                    .iter()
+                                    .fold(true, |none_selected, cat| none_selected && !cat.2))
                         {
                             let button = egui::Button::new(
-                                egui::RichText::new(chr.to_string()).font(self.font_id.clone()),
+                                egui::RichText::new(chr.to_string())
+                                    .font(self.default_font_id.clone()),
                             )
                             .frame(true)
-                            .min_size(egui::Vec2 {
-                                x: self.font_id.size * 2.,
-                                y: self.font_id.size * 2.,
-                            });
+                            .min_size(egui::Vec2::splat(self.default_font_id.size * 2.));
 
                             let tooltip_ui = |ui: &mut egui::Ui| {
                                 ui.label(
-                                    egui::RichText::new(chr.to_string()).font(self.font_id.clone()),
+                                    egui::RichText::new(chr.to_string())
+                                        .font(self.default_font_id.clone()),
                                 );
-                                ui.label(format!("{}\nU+{:X}\n\nDouble-click to copy 📋", name, chr as u32));
+                                ui.label(format!(
+                                    "{}\nU+{:X}\n\nDouble-click to copy 📋",
+                                    capitalize(name),
+                                    chr as u32
+                                ));
                             };
 
-                            let hover_button = ui.add(button).on_hover_ui(tooltip_ui);
+                            let hover_button = ui
+                                .add_sized(
+                                    egui::Vec2::splat(self.default_font_id.size * 2.),
+                                    button,
+                                )
+                                .on_hover_ui(tooltip_ui);
 
-                            if hover_button.double_clicked() {
+                            if hover_button.clicked() {
                                 self.selected_char = chr;
                             }
 
@@ -318,6 +371,114 @@ impl eframe::App for GlyphanaApp {
                 ui.label("You would normally choose either panels OR windows.");
             });
         }
+    }
+}
+
+impl GlyphanaApp {
+    fn paint_glyph(
+        &mut self,
+        scale: f32,
+        ui: &mut egui::Ui,
+        response: egui::Response,
+        painter: egui::Painter,
+    ) {
+        /*let color = if ui.visuals().dark_mode {
+            egui::Color32::from_additive_luminance(196)
+        } else {
+            egui::Color32::from_black_alpha(240)
+        };*/
+
+        //egui::RichText::new("&").size(20.0);
+
+        //let (response, painter) =
+        //    ui.allocate_painter(Vec2::new(ui.available_width(), 300.0), Sense::hover());
+
+        let rect = response.rect;
+
+        let center = rect.center();
+
+        let glyph_scale = scale * 0.8;
+
+        painter.text(
+            egui::Pos2::new(center.x, scale + rect.min.y),
+            egui::Align2::CENTER_BOTTOM,
+            self.selected_char,
+            egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
+            egui::Color32::WHITE,
+        );
+
+        ui.expand_to_include_rect(painter.clip_rect());
+
+        //painter.extend(vec![egui::Shape::text("g").scale(40.0)]);
+
+        // here you can get the font_metrics
+
+        let font = rusttype::Font::try_from_bytes(NOTO_SANS_FONT).unwrap();
+
+        let v_metrics = font.v_metrics(rusttype::Scale::uniform(glyph_scale));
+
+        //let width = metrics.left_side_bearing + metrics.right_side_bearing;
+        //let height = metrics.ascender - metrics.descender;
+
+        let left = rect.min.x;
+        let top = rect.min.y;
+
+        let right = rect.max.x;
+        let bottom = rect.max.y;
+
+        //info!("{}", v_metrics.descent);
+
+        painter.line_segment(
+            [
+                egui::Pos2::new(left, top + glyph_scale - v_metrics.ascent),
+                egui::Pos2::new(right, top + glyph_scale - v_metrics.ascent),
+            ],
+            egui::Stroke::new(1., egui::Color32::WHITE),
+        );
+
+        painter.line_segment(
+            [
+                egui::Pos2::new(left, top + glyph_scale),
+                egui::Pos2::new(right, top + glyph_scale),
+            ],
+            egui::Stroke::new(1., egui::Color32::BLUE),
+        );
+
+        painter.line_segment(
+            [
+                egui::Pos2::new(left, top + scale - v_metrics.descent),
+                egui::Pos2::new(right, top + scale - v_metrics.descent),
+            ],
+            egui::Stroke::new(1., egui::Color32::RED),
+        );
+
+        /*
+        painter.line_segment(
+            [
+                egui::Pos2::new(
+                    left,
+                    top + glyph_scale - (v_metrics.descent + v_metrics.line_gap),
+                ),
+                egui::Pos2::new(
+                    right,
+                    top + glyph_scale - (v_metrics.descent + v_metrics.line_gap),
+                ),
+            ],
+            egui::Stroke::new(1., egui::Color32::GREEN),
+        );*/
+
+        /*
+            egui::Line::new()
+                .start(0.0, metrics.cap_height * scale)
+                .end(width * glyph_scale, metrics.cap_height * scale)
+                .build(ui);
+
+            egui::Line::new()
+                .start(0.0, metrics.baseline * scale)
+                .end(width * glyph_scale, metrics.baseline * scale)
+                .build(ui);
+        });
+        */
     }
 }
 
@@ -369,7 +530,7 @@ fn special_char_name(chr: char) -> Option<&'static str> {
         '\u{FE837}' => Some("digit zero in square"),
 
         // Special private-use-area extensions found in `emoji-icon-font.ttf`:
-        // Web services / operating systems / browsers
+        // Web services/operating systems/browsers
         '\u{E600}' => Some("web-dribbble"),
         '\u{E601}' => Some("web-stackoverflow"),
         '\u{E602}' => Some("web-vimeo"),
@@ -475,7 +636,52 @@ fn special_char_name(chr: char) -> Option<&'static str> {
         '\u{F81B}' => Some("seven.sinf"),
         '\u{F81C}' => Some("eight.sinf"),
         '\u{F81D}' => Some("nine.sinf"),
-
         _ => None,
     }
+}
+
+fn other_char_name(chr: char) -> Option<&'static str> {
+    #[allow(clippy::match_same_arms)] // many "flag"
+    match chr {
+        // Manually added
+        '\u{00DF}' => Some("sz"),
+        '\u{1E9E}' => Some("SZ"),
+        '\u{00C4}' => Some("A umlaut"),
+        '\u{00E4}' => Some("a umlaut"),
+        '\u{00CB}' => Some("E umlaut"),
+        '\u{00EB}' => Some("e umlaut"),
+        '\u{00CF}' => Some("I umlaut"),
+        '\u{00EF}' => Some("i umlaut"),
+        '\u{00D6}' => Some("O umlaut"),
+        '\u{00F6}' => Some("o umlaut"),
+        '\u{00DC}' => Some("U umlaut"),
+        '\u{00FC}' => Some("u umlaut"),
+        '\u{0178}' => Some("Y umlaut"),
+        '\u{00FF}' => Some("y umlaut"),
+        _ => None,
+    }
+}
+
+/// Capitalizes the first character.
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
+}
+
+/// Capitalizes the first character of every word.
+fn title_case(s: &str) -> String {
+    s.to_lowercase()
+        .split_whitespace()
+        .map(|s| {
+            let mut c = s.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
 }
