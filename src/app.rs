@@ -1,7 +1,8 @@
 use ahash::AHashMap as HashMap;
-use egui::{Color32, Painter};
+
 use enum_dispatch::enum_dispatch;
-use log::{info, warn};
+use log::info;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use unicode_blocks as ub;
 
@@ -20,16 +21,20 @@ pub struct GlyphanaApp {
     search_text: String,
     // Whether to onlky search in the subsets selected on the left panel.
     search_only_categories: bool,
-    // Search only the glyph's name.
-    search_only_name: bool,
+    // Also search the glyph's name.
+    search_name: bool,
     // if search is case sensitive
     case_sensitive: bool,
     #[serde(skip)]
     default_font_id: egui::FontId,
     #[serde(skip)]
+    font_size: f32,
+    #[serde(skip)]
     categories: Vec<(String, UnicodeCategory, bool)>,
     #[serde(skip)]
     named_chars: BTreeMap<egui::FontFamily, BTreeMap<char, String>>,
+    pixels_per_point: f32,
+    ui_scale: UiScale,
 }
 
 #[enum_dispatch]
@@ -90,6 +95,13 @@ enum UnicodeCategory {
     Collection(UnicodeCollection),
 }
 
+#[derive(PartialEq, Eq, Deserialize, Serialize)]
+enum UiScale {
+    Small,
+    Medium,
+    Large,
+}
+
 impl Default for GlyphanaApp {
     fn default() -> Self {
         Self {
@@ -97,8 +109,9 @@ impl Default for GlyphanaApp {
             search_text: Default::default(),
             search_only_categories: false,
             case_sensitive: false,
-            search_only_name: false,
+            search_name: false,
             default_font_id: egui::FontId::new(18.0, egui::FontFamily::Name(NOTO_SANS.into())),
+            font_size: 18.0,
             categories: vec![
                 (
                     "Favorites".to_string(),
@@ -120,6 +133,22 @@ impl Default for GlyphanaApp {
                     false,
                 ),
                 (
+                    "Latin".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::BASIC_LATIN,
+                        ub::LATIN_1_SUPPLEMENT,
+                        ub::LATIN_EXTENDED_ADDITIONAL,
+                        ub::LATIN_EXTENDED_A,
+                        ub::LATIN_EXTENDED_B,
+                        ub::LATIN_EXTENDED_C,
+                        ub::LATIN_EXTENDED_D,
+                        ub::LATIN_EXTENDED_E,
+                        ub::LATIN_EXTENDED_F,
+                        ub::LATIN_EXTENDED_G,
+                    ])),
+                    false,
+                ),
+                (
                     ub::CURRENCY_SYMBOLS.name().to_string(),
                     UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
                     false,
@@ -130,23 +159,40 @@ impl Default for GlyphanaApp {
                     UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
                     false,
                 ),
-                /*(
-                    ub::EMOTICONS.name().to_string(),
-                    UnicodeCategory::Block(ub::EMOTICONS),
+                (
+                    "Emoji".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::MAHJONG_TILES,
+                        ub::DOMINO_TILES,
+                        ub::PLAYING_CARDS,
+                        ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
+                        ub::EMOTICONS,
+                        ub::ORNAMENTAL_DINGBATS,
+                        ub::TRANSPORT_AND_MAP_SYMBOLS,
+                        ub::ALCHEMICAL_SYMBOLS,
+                        ub::GEOMETRIC_SHAPES_EXTENDED,
+                        ub::SUPPLEMENTAL_ARROWS_C,
+                        ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
+                        ub::CHESS_SYMBOLS,
+                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                    ])),
                     false,
                 ),
-                (
+                /*(
                     ub::DINGBATS.name().to_string(),
                     UnicodeCategory::Block(ub::DINGBATS),
                     false,
-                ),
+                ),*/
                 (
                     ub::MATHEMATICAL_OPERATORS.name().to_string(),
                     UnicodeCategory::Block(ub::MATHEMATICAL_OPERATORS),
                     false,
-                ),*/
+                ),
             ],
             named_chars: Default::default(),
+            pixels_per_point: Default::default(),
+            ui_scale: UiScale::Medium,
         }
     }
 }
@@ -157,50 +203,20 @@ impl GlyphanaApp {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
-        // Start with the default fonts (we will be adding to them rather than replacing them).
-        let mut fonts = egui::FontDefinitions::default();
-
-        // Install my own font (maybe supporting non-latin characters).
-        // .ttf and .otf files supported.
-        fonts.font_data.insert(
-            NOTO_SANS.to_owned(),
-            egui::FontData::from_static(NOTO_SANS_FONT),
-        );
-
-        fonts.font_data.insert(
-            NOTO_SANS_MATH.to_owned(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoSansMath-Regular.ttf")),
-        );
-
-        // Put the font first (highest priority) for proportional text.
-        fonts
-            .families
-            .entry(egui::FontFamily::Name(NOTO_SANS.into()))
-            .or_default()
-            .insert(0, NOTO_SANS.to_owned());
-
-        fonts
-            .families
-            .entry(egui::FontFamily::Name(NOTO_SANS_MATH.into()))
-            .or_default()
-            .insert(0, NOTO_SANS_MATH.to_owned());
-
-        // Put my font as last fallback for monospace:
-        /*fonts
-        .families
-        .entry(egui::FontFamily::Monospace)
-        .or_default()
-        .push("noto-sans".to_owned());*/
-
-        // Tell egui to use these fonts
-        cc.egui_ctx.set_fonts(fonts);
+        // Add the Noto fonts -- what we use to cover as much unicode as possible for now.
+        cc.egui_ctx.set_fonts(Self::fonts());
 
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         if let Some(storage) = cc.storage {
-            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
+            let mut foo: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            foo.pixels_per_point = cc.egui_ctx.pixels_per_point();
+            foo
         } else {
-            Default::default()
+            Self {
+                pixels_per_point: cc.egui_ctx.pixels_per_point(),
+                ..Default::default()
+            }
         }
     }
 
@@ -209,7 +225,6 @@ impl GlyphanaApp {
         ui: &egui::Ui,
         family: egui::FontFamily,
     ) -> BTreeMap<char, String> {
-        info!("Running available_characters");
         ui.fonts(|f| {
             f.lock()
                 .fonts
@@ -224,6 +239,37 @@ impl GlyphanaApp {
                 .collect()
         })
     }
+
+    fn fonts() -> egui::FontDefinitions {
+        let mut fonts = egui::FontDefinitions::default();
+
+        //let mut font_data: BTreeMap<String, egui::FontData> = BTreeMap::new();
+        //let mut families = BTreeMap::new();
+
+        fonts.font_data.insert(
+            NOTO_SANS.to_owned(),
+            egui::FontData::from_static(&NOTO_SANS_FONT),
+        );
+        fonts.font_data.insert(
+            NOTO_SANS_MATH.to_owned(),
+            egui::FontData::from_static(&NOTO_SANS_MATH_FONT),
+        );
+        fonts.font_data.insert(
+            NOTO_EMOJI.to_owned(),
+            egui::FontData::from_static(&NOTO_EMOJI_FONT),
+        );
+
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_SANS.into()),
+            vec![
+                NOTO_SANS.to_owned(),
+                NOTO_SANS_MATH.to_owned(),
+                NOTO_EMOJI.to_owned(),
+            ],
+        );
+
+        fonts
+    }
 }
 
 impl eframe::App for GlyphanaApp {
@@ -237,9 +283,29 @@ impl eframe::App for GlyphanaApp {
         // let mut named_chars = &mut BTreeMap::<char, std::string::String>::new();
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-            // The top panel is often a good place for a menu bar:
+            // Hamburger menu.
             egui::menu::bar(ui, |ui| {
                 ui.menu_button(format!("{}", super::HAMBURGER), |ui| {
+                    if ui.button("Customize List…").clicked() {
+                        _frame.close();
+                    }
+
+                    ui.separator();
+
+                    ui.add_enabled_ui(false, |ui| ui.button("Interface Size"));
+
+                    ui.vertical(|ui| {
+                        ui.radio_value(&mut self.ui_scale, UiScale::Small, "Small");
+                        ui.radio_value(&mut self.ui_scale, UiScale::Medium, "Medium");
+                        ui.radio_value(&mut self.ui_scale, UiScale::Large, "Large");
+                    });
+                    match self.ui_scale {
+                        UiScale::Small => ctx.set_pixels_per_point(self.pixels_per_point),
+                        UiScale::Medium => ctx.set_pixels_per_point(self.pixels_per_point * 1.5),
+                        UiScale::Large => ctx.set_pixels_per_point(self.pixels_per_point * 2.5),
+                    }
+
+                    ui.separator();
                     if ui.button("Quit").clicked() {
                         _frame.close();
                     }
@@ -255,11 +321,14 @@ impl eframe::App for GlyphanaApp {
                     if !self.case_sensitive {
                         self.search_text = self.search_text.to_lowercase();
                     }
-                    ui.toggle_value(
-                        &mut self.search_only_name,
-                        format!("{}", super::DOCUMENT_WITH_TEXT),
-                    );
+
                     ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"));
+                    ui.add_enabled_ui(!self.case_sensitive, |ui| {
+                        ui.toggle_value(
+                            &mut self.search_name,
+                            format!("{}", super::DOCUMENT_WITH_TEXT),
+                        );
+                    });
                 });
             });
         });
@@ -289,7 +358,7 @@ impl eframe::App for GlyphanaApp {
             let scale = 256.0;
 
             let (response, painter) =
-                ui.allocate_painter(egui::Vec2::new(scale, 1.5 * scale), egui::Sense::click());
+                ui.allocate_painter(egui::Vec2::new(scale, 3. * scale), egui::Sense::click());
             //let painter =
             //Painter::new(ctx.clone(), ui.layer_id(), ui.available_rect_before_wrap());
 
@@ -310,8 +379,8 @@ impl eframe::App for GlyphanaApp {
 
                     for (&chr, name) in named_chars {
                         if (self.search_text.is_empty()
-                            || name.contains(&self.search_text)
-                            || self.search_text.contains(chr)
+                            || (self.search_name && name.contains(&self.search_text))
+                            || (!self.search_name && self.search_text.contains(chr))
                             || glyph_names::glyph_name(chr as _).contains(&self.search_text))
                             && (self
                                 .categories
@@ -399,41 +468,48 @@ impl GlyphanaApp {
 
         let glyph_scale = scale * 0.8;
 
-        painter.text(
-            egui::Pos2::new(center.x, scale + rect.min.y),
-            egui::Align2::CENTER_BOTTOM,
-            self.selected_char,
-            egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
-            egui::Color32::WHITE,
-        );
+        let offset = scale * 0.12;
 
-        ui.expand_to_include_rect(painter.clip_rect());
+        let left = rect.min.x + offset;
+        let top = rect.min.y + offset;
 
-        //painter.extend(vec![egui::Shape::text("g").scale(40.0)]);
+        let right = rect.max.x - offset;
+        let _bottom = rect.max.y - offset;
 
-        // here you can get the font_metrics
-
-        let font = rusttype::Font::try_from_bytes(NOTO_SANS_FONT).unwrap();
+        let font = rusttype::Font::try_from_bytes(&NOTO_SANS_FONT).unwrap();
 
         let v_metrics = font.v_metrics(rusttype::Scale::uniform(glyph_scale));
 
-        //let width = metrics.left_side_bearing + metrics.right_side_bearing;
-        //let height = metrics.ascender - metrics.descender;
+        let visuals = &ui.ctx().style().visuals;
+        let dark_mode = visuals.dark_mode;
 
-        let left = rect.min.x;
-        let top = rect.min.y;
+        let glyph_color = if dark_mode {
+            egui::Color32::WHITE
+        } else {
+            egui::Color32::BLACK
+        };
 
-        let right = rect.max.x;
-        let bottom = rect.max.y;
+        let mut stroke = visuals.widgets.noninteractive.fg_stroke;
+        let info_text_color = stroke.color;
 
-        //info!("{}", v_metrics.descent);
+        stroke.color = stroke
+            .color
+            .linear_multiply(info_text_color.r() as f32 / 255.0);
+
+        painter.text(
+            egui::Pos2::new(center.x, scale + top),
+            egui::Align2::CENTER_BOTTOM,
+            self.selected_char,
+            egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
+            glyph_color,
+        );
 
         painter.line_segment(
             [
                 egui::Pos2::new(left, top + glyph_scale - v_metrics.ascent),
                 egui::Pos2::new(right, top + glyph_scale - v_metrics.ascent),
             ],
-            egui::Stroke::new(1., egui::Color32::WHITE),
+            stroke,
         );
 
         painter.line_segment(
@@ -441,44 +517,97 @@ impl GlyphanaApp {
                 egui::Pos2::new(left, top + glyph_scale),
                 egui::Pos2::new(right, top + glyph_scale),
             ],
-            egui::Stroke::new(1., egui::Color32::BLUE),
+            stroke,
         );
 
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + scale - v_metrics.descent),
-                egui::Pos2::new(right, top + scale - v_metrics.descent),
+                egui::Pos2::new(left, top + glyph_scale - v_metrics.descent),
+                egui::Pos2::new(right, top + glyph_scale - v_metrics.descent),
             ],
-            egui::Stroke::new(1., egui::Color32::RED),
+            stroke,
         );
 
-        /*
-        painter.line_segment(
-            [
-                egui::Pos2::new(
-                    left,
-                    top + glyph_scale - (v_metrics.descent + v_metrics.line_gap),
-                ),
-                egui::Pos2::new(
-                    right,
-                    top + glyph_scale - (v_metrics.descent + v_metrics.line_gap),
-                ),
-            ],
-            egui::Stroke::new(1., egui::Color32::GREEN),
-        );*/
+        let name = textwrap::wrap(
+            &title_case(
+                &unicode_names2::name(self.selected_char)
+                    .map(|name| name.to_string().to_lowercase())
+                    .unwrap_or_else(|| String::new()),
+            ),
+            18,
+        )
+        .join("\n");
 
-        /*
-            egui::Line::new()
-                .start(0.0, metrics.cap_height * scale)
-                .end(width * glyph_scale, metrics.cap_height * scale)
-                .build(ui);
+        let top_info = top + glyph_scale * 1.6;
 
-            egui::Line::new()
-                .start(0.0, metrics.baseline * scale)
-                .end(width * glyph_scale, metrics.baseline * scale)
-                .build(ui);
+        painter.text(
+            egui::Pos2::new(center.x, top_info),
+            egui::Align2::CENTER_TOP,
+            name,
+            egui::FontId::proportional(self.font_size),
+            info_text_color,
+        );
+
+        let unicode_hex: [u8; 4] = bytemuck::cast(self.selected_char);
+        let mut unicode_hex_string = if 0 != unicode_hex[3] {
+            format!("{:02X})\u{2009}", unicode_hex[3])
+        } else {
+            String::new()
+        };
+
+        unicode_hex[..2].iter().rev().for_each(|&uc| {
+            if 0 != uc || !unicode_hex_string.is_empty() {
+                unicode_hex_string += &format!("{:02X}\u{2009}", uc);
+            }
         });
-        */
+
+        painter.text(
+            egui::Pos2::new(center.x, top_info + 4. * self.font_size),
+            egui::Align2::RIGHT_TOP,
+            "Unicode ",
+            egui::FontId::proportional(self.font_size),
+            info_text_color,
+        );
+
+        painter.text(
+            egui::Pos2::new(center.x, top_info + 4. * self.font_size),
+            egui::Align2::LEFT_TOP,
+            format!(" U+{unicode_hex_string}"),
+            egui::FontId::monospace(self.font_size),
+            info_text_color,
+        );
+
+        let mut utf_eight = [0u8; 4];
+        encode_unicode::Utf8Char::new(self.selected_char).to_slice(&mut utf_eight);
+        let mut utf_eight_string = if 0 != utf_eight[3] {
+            format!("{:02X})\u{2009}", utf_eight[3])
+        } else {
+            String::new()
+        };
+
+        utf_eight[..2].iter().rev().for_each(|&uc| {
+            if 0 != uc || !utf_eight_string.is_empty() {
+                utf_eight_string += &format!("{:02X}\u{2009}", uc);
+            }
+        });
+
+        painter.text(
+            egui::Pos2::new(center.x, top_info + 6. * self.font_size),
+            egui::Align2::RIGHT_TOP,
+            "UTF-8 ",
+            egui::FontId::proportional(self.font_size),
+            info_text_color,
+        );
+
+        painter.text(
+            egui::Pos2::new(center.x, top_info + 6. * self.font_size),
+            egui::Align2::LEFT_TOP,
+            format!(" {utf_eight_string}"),
+            egui::FontId::monospace(self.font_size),
+            info_text_color,
+        );
+
+        ui.expand_to_include_rect(painter.clip_rect());
     }
 }
 
