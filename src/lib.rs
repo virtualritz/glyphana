@@ -1,5 +1,6 @@
 #![warn(clippy::all)]
 #![feature(option_result_contains)]
+#![feature(let_chains)]
 use include_flate::flate;
 
 pub const CANCELLATION: char = '🗙';
