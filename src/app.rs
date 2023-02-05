@@ -4,11 +4,12 @@ use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
 use log::info;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use unicode_blocks as ub;
 
 use crate::*;
 
+const CAT_START: usize = 3;
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 // if we add new fields, give them default values when deserializing old state
@@ -19,24 +20,29 @@ pub struct GlyphanaApp {
     // The character the user selected for inspection.
     selected_char: char,
     // The string the user entered into the search field.
-    ui_search_text: String,
-    collection: HashSet<char>,
-    #[serde(skip)]
-    search_text: String,
     // Whether to onlky search in the subsets selected on the left panel.
     search_only_categories: bool,
     // Also search the glyph's name.
     search_name: bool,
-    // if search is case sensitive
+    // If search is case sensitive.
     case_sensitive: bool,
+    recently_used: VecDeque<char>,
+    recently_used_max_len: usize,
+    collection: HashSet<char>,
+    selected_category: usize,
+    ui_search_text: String,
+    #[serde(skip)]
+    search_text: String,
     #[serde(skip)]
     default_font_id: egui::FontId,
     #[serde(skip)]
     font_size: f32,
     #[serde(skip)]
-    categories: Vec<(String, UnicodeCategory, bool)>,
+    categories: Vec<(String, UnicodeCategory)>,
     #[serde(skip)]
-    char_cache: BTreeMap<char, String>,
+    full_glyph_cache: BTreeMap<char, String>,
+    #[serde(skip)]
+    showed_glyph_cache: BTreeMap<char, String>,
     pixels_per_point: f32,
     glyph_scale: GlyphScale,
 }
@@ -80,11 +86,12 @@ impl CharacterInspector for UnicodeMultiBlock {
     }
 }
 
-struct UnicodeCollection(HashMap<char, String>);
+#[derive(Default)]
+struct UnicodeCollection(HashSet<char>);
 
 impl CharacterInspector for UnicodeCollection {
     fn characters(&self) -> Vec<char> {
-        self.0.iter().map(|(&c, _)| c).collect()
+        self.0.iter().map(|&c| c).collect()
     }
 
     fn contains(&self, c: char) -> bool {
@@ -99,11 +106,21 @@ enum UnicodeCategory {
     Collection(UnicodeCollection),
 }
 
-#[derive(PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 enum GlyphScale {
     Small,
     Medium,
     Large,
+}
+
+impl From<GlyphScale> for f32 {
+    fn from(g: GlyphScale) -> f32 {
+        match g {
+            GlyphScale::Small => 18.0,
+            GlyphScale::Medium => 24.0,
+            GlyphScale::Large => 36.0,
+        }
+    }
 }
 
 impl Default for GlyphanaApp {
@@ -115,19 +132,16 @@ impl Default for GlyphanaApp {
             search_only_categories: false,
             case_sensitive: false,
             search_name: false,
-            default_font_id: egui::FontId::new(18.0, egui::FontFamily::Name(NOTO_SANS.into())),
+            default_font_id: egui::FontId::new(24.0, egui::FontFamily::Name(NOTO_SANS.into())),
             font_size: 18.0,
+            recently_used: Default::default(),
+            recently_used_max_len: 4,
             collection: Default::default(),
+            selected_category: Default::default(),
             categories: vec![
-                (
-                    "Favorites".to_string(),
-                    UnicodeCategory::Collection(UnicodeCollection(HashMap::new())),
-                    false,
-                ),
                 (
                     ub::ARROWS.name().to_string(),
                     UnicodeCategory::Block(ub::ARROWS),
-                    false,
                 ),
                 /*(
                     ub::PARENTHESES.name().to_string(),
@@ -140,7 +154,6 @@ impl Default for GlyphanaApp {
                         ub::GENERAL_PUNCTUATION,
                         ub::SUPPLEMENTAL_PUNCTUATION,
                     ])),
-                    false,
                 ),
                 (
                     "Latin".to_string(),
@@ -156,18 +169,15 @@ impl Default for GlyphanaApp {
                         ub::LATIN_EXTENDED_F,
                         ub::LATIN_EXTENDED_G,
                     ])),
-                    false,
                 ),
                 (
                     ub::CURRENCY_SYMBOLS.name().to_string(),
                     UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
-                    false,
                 ),
                 //(ub::PICTOGRAPHS.name().to_string(), vec![ub::PICTOGRAPHS]),
                 (
                     ub::LETTERLIKE_SYMBOLS.name().to_string(),
                     UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
-                    false,
                 ),
                 (
                     "Emoji".to_string(),
@@ -187,20 +197,19 @@ impl Default for GlyphanaApp {
                         ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
                         ub::SYMBOLS_FOR_LEGACY_COMPUTING,
                     ])),
-                    false,
                 ),
                 /*(
                     ub::DINGBATS.name().to_string(),
                     UnicodeCategory::Block(ub::DINGBATS),
-                    false,
                 ),*/
                 (
                     ub::MATHEMATICAL_OPERATORS.name().to_string(),
                     UnicodeCategory::Block(ub::MATHEMATICAL_OPERATORS),
-                    false,
                 ),
             ],
-            char_cache: Default::default(),
+            full_glyph_cache: Default::default(),
+            showed_glyph_cache: Default::default(),
+
             pixels_per_point: Default::default(),
             glyph_scale: GlyphScale::Medium,
         }
@@ -228,6 +237,15 @@ impl GlyphanaApp {
                 ..Default::default()
             }
         };
+
+        glyphana.default_font_id = egui::FontId::new(
+            glyphana.glyph_scale.into(),
+            egui::FontFamily::Name(NOTO_SANS.into()),
+        );
+
+        if !glyphana.ui_search_text.is_empty() {
+            glyphana.selected_category = 2;
+        }
 
         glyphana
     }
@@ -268,7 +286,13 @@ impl GlyphanaApp {
         );
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
-            egui::FontData::from_static(&NOTO_EMOJI_FONT),
+            egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(
+                egui::FontTweak {
+                    scale: 0.81,           // make it smaller
+                    y_offset_factor: 0.0, // move it up
+                    y_offset: 0.0,
+                },
+            ),
         );
 
         fonts.families.insert(
@@ -292,7 +316,7 @@ impl eframe::App for GlyphanaApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        // let mut named_chars = &mut BTreeMap::<char, std::string::String>::new();
+        //self.update_search_text_and_showed_glyph_cache();
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // Hamburger menu.
@@ -311,10 +335,13 @@ impl eframe::App for GlyphanaApp {
                         ui.radio_value(&mut self.glyph_scale, GlyphScale::Medium, "Medium");
                         ui.radio_value(&mut self.glyph_scale, GlyphScale::Large, "Large");
                     });
-                    match self.glyph_scale {
-                        GlyphScale::Small => self.default_font_id.size = 10.0,
-                        GlyphScale::Medium => self.default_font_id.size = 18.0,
-                        GlyphScale::Large => self.default_font_id.size = 36.0,
+
+                    self.default_font_id.size = self.glyph_scale.into();
+
+                    ui.separator();
+
+                    if ui.button("Clear Recently Used").clicked() {
+                        self.recently_used.clear();
                     }
 
                     ui.separator();
@@ -333,77 +360,85 @@ impl eframe::App for GlyphanaApp {
                         self.search_text.clear();
                     }
 
-                    let search = ui.text_edit_singleline(&mut self.ui_search_text); // .hint_text("🔍 Search");
-
                     // Fill character chache.
-                    if self.char_cache.is_empty() {
-                        self.char_cache = available_characters(ui, self.default_font_id.family.clone());
+                    if self.full_glyph_cache.is_empty() {
+                        self.full_glyph_cache = available_characters(ui, self.default_font_id.family.clone());
+                        self.showed_glyph_cache = self.full_glyph_cache.clone();
                     }
 
-                    if search.changed() {
-                        self.search_text = self.ui_search_text.clone();
+                    // ;
 
-                        // Update character cache.
-                        self.char_cache = self.char_cache
-                            .clone()
-                            .into_iter()
-                            .filter(|(chr, name)| {
-                                let mut tmp = [0u8; 4];
-                                let mut tmp2 = [0u8; 4];
-
-                                //let cmp_chr unicode_case_mapping::case_folded(chr).unwrap_or_else(|| chr as _)
-                                let chr_str = chr.encode_utf8(&mut tmp);
-
-                                //info!("{}", chr);
-                                //let cured_chr = decancer::cure(chr_str).into_str();
-
-                                self.search_text.is_empty()
-                                        || (self.search_name && name.contains(&self.search_text))
-                                        || (!self.search_name && self.search_text.contains(&chr.to_string()))
-                                        || glyph_names::glyph_name(*chr as _).contains(&self.search_text)
-                                        || self
-                                            .search_text
-                                            .chars()
-                                            .find(|&c| {
-                                                //cured_chr.chars().next().unwrap() == c ||
-                                                unicode_skeleton::confusable([*chr].into_iter(), [c].into_iter())
-                                            })
-                                            .is_some()
-
-                                })
-                            .collect();
-
-
-                        //self.search_text = decancer::cure(&self.ui_search_text).into_str();
+                    if ui.add(egui::TextEdit::singleline(&mut self.ui_search_text).hint_text("🔍 Search")).changed() {
+                        self.update_search_text_and_showed_glyph_cache();
                     }
-                            //.desired_width(120.0))
+                    //self.search_text = decancer::cure(&self.ui_search_text).into_str();
+
+                    //.desired_width(120.0))
                             ;
                     /*if !self.case_sensitive {
                         self.search_text = self.search_text.to_lowercase();
                     }*/
 
-                    ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"));
+
+                    /*ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"));
                     ui.add_enabled_ui(!self.case_sensitive, |ui| {
                         ui.toggle_value(
                             &mut self.search_name,
                             format!("{}", super::DOCUMENT_WITH_TEXT),
                         );
-                    });
+                    })*/;
+
+                    if ui.toggle_value(&mut self.search_name, format!("{}", super::DOCUMENT_WITH_TEXT)).on_hover_ui(|ui| { ui.label("Search Glyph Name");}).changed() {
+                        self.update_search_text_and_showed_glyph_cache();
+                    }
                 });
             });
         });
 
         egui::SidePanel::left("categories").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                ui.toggle_value(&mut self.categories[0].2, "Collection");
+                /*egui::Grid::new("custom_categories")
+                    .num_columns(1)
+                    //.spacing([40.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {*/
+                        ui.selectable_value(&mut self.selected_category, 0, "Recently Used");
+                       // ui.end_row();
+
+                        ui.selectable_value(&mut self.selected_category, 1, "Collection");
+                       // ui.end_row();
+
+                        ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
+                            ui.selectable_value(&mut self.selected_category, 2, "Search Text")
+                        });
+                     //   ui.end_row();
+                   // });
 
                 ui.separator();
 
-                for category in &mut self.categories[1..] {
-                    ui.toggle_value(&mut category.2, &category.0);
-                }
+                /*egui::Grid::new("categories")
+                    .num_columns(1)
+                    .striped(true)
+                    .show(ui, |ui| {*/
+                        for (i, category) in &mut self.categories.iter().enumerate() {
+                            ui.selectable_value(
+                                &mut self.selected_category,
+                                i + CAT_START,
+                                &category.0,
+                            );
+                            ui.end_row();
+                        }
+                    //});
             });
         });
+
+        match self.selected_category {
+            2 => self.update_search_text_and_showed_glyph_cache(),
+            _ => {
+                self.search_text.clear();
+                self.showed_glyph_cache = self.full_glyph_cache.clone();
+            } //self.update_search_text_and_showed_glyph_cache();
+        }
 
         egui::SidePanel::right("character_preview").show(ctx, |ui| {
             //egui::ScrollArea::vertical().show(ui, |ui| {
@@ -417,20 +452,129 @@ impl eframe::App for GlyphanaApp {
                 rect,
             );*/
 
-            let scale = 256.0;
+            // TODO: make painter fill the entire panel width (scale the glyph accordingly).
+            let rect = ui.available_rect_before_wrap();
+
+            let scale = rect.max.x - rect.min.x;
 
             let (response, painter) =
-                ui.allocate_painter(egui::Vec2::new(scale, 3. * scale), egui::Sense::click());
+                ui.allocate_painter(egui::Vec2::new(scale, 1.2 * scale), egui::Sense::click());
+
+            //painter.on_hover_ui(ui.label("Click to Copy 📋"));
+
             //let painter =
             //Painter::new(ctx.clone(), ui.layer_id(), ui.available_rect_before_wrap());
 
             self.paint_glyph(scale * 0.8, ui, response, painter);
 
-            if ui.button("Add to Collection").clicked() {
-                self.collection.insert(self.selected_char);
-            }
+            ui.with_layout(
+                egui::Layout::top_down_justified(egui::Align::Center),
+                |ui| {
 
-            //})
+                    egui::Grid::new("glyph_name")
+                        .num_columns(1)
+                        //.min_col_width(scale)
+                        .min_row_height(60.0)
+                        //.spacing([40.0, 4.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.end_row();
+                            ui.centered_and_justified(|ui| {
+                            let name = textwrap::wrap(
+                                &title_case(
+                                    &unicode_names2::name(self.selected_char)
+                                        .map(|name| name.to_string().to_lowercase())
+                                        .unwrap_or_else(|| String::new()),
+                                ),
+                                18,
+                            )
+                            .join("\n");
+
+                            ui.label(name);
+                        });
+                    });
+
+                    egui::Grid::new("glyph_codepoints")
+                        .num_columns(2)
+                        .min_col_width(scale / 2.1)
+                        //.spacing([40.0, 4.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.end_row();
+                            // Unicode
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                                ui.label("Unicode");
+                            });
+
+                            let unicode_hex: [u8; 4] = bytemuck::cast(self.selected_char);
+
+                            let mut unicode_hex_string = String::from("U+");
+
+                            if 0 != unicode_hex[3] {
+                                unicode_hex_string += &format!("{:02X}\u{2009}", unicode_hex[3])
+                            }
+
+                            unicode_hex[..2].iter().rev().for_each(|&uc| {
+                                if 0 != uc || !unicode_hex_string.is_empty() {
+                                    unicode_hex_string += &format!("{:02X}\u{2009}", uc);
+                                }
+                            });
+
+                            ui.button(egui::RichText::new(unicode_hex_string).monospace()).on_hover_ui(|ui| { ui.label("Copy Unicode as HTML");});
+
+                            ui.end_row();
+
+                            // Utf8
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                                ui.label("UTF-8");
+                            });
+
+                            let mut utf_eight = [0u8; 4];
+                            encode_unicode::Utf8Char::new(self.selected_char)
+                                .to_slice(&mut utf_eight);
+
+                            let mut utf_eight_string = if 0 != utf_eight[3] {
+                                format!("{:02X}\u{2009}", utf_eight[3])
+                            } else {
+                                String::new()
+                            };
+
+                            utf_eight[..2].iter().rev().for_each(|&uc| {
+                                if 0 != uc || !utf_eight_string.is_empty() {
+                                    utf_eight_string += &format!("{:02X}\u{2009}", uc);
+                                }
+                            });
+
+                            ui.button(egui::RichText::new(utf_eight_string).monospace()).on_hover_ui(|ui| { ui.label("Copy UTF8 Code");});
+
+                            ui.end_row();
+                        });
+
+                    egui::Grid::new("collect")
+                        .num_columns(1)
+                        //.min_col_width(scale)
+                        //.spacing([40.0, 4.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.end_row();
+                            ui.centered_and_justified(|ui| {
+                                let is_in_collection =
+                                    self.collection.contains(&self.selected_char);
+
+                                if ui
+                                    .add(egui::SelectableLabel::new(is_in_collection, "Collected")).on_hover_ui(|ui| { ui.label("Add Glyp to Collection");})
+                                    .clicked()
+                                {
+                                    if is_in_collection {
+                                        self.collection.remove(&self.selected_char);
+                                    } else {
+                                        self.collection.insert(self.selected_char);
+                                    }
+                                }
+                            });
+                        });
+                },
+            );
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
@@ -440,23 +584,29 @@ impl eframe::App for GlyphanaApp {
 
                     //info!("ã == a is {}", focaccia::unicode_full_case_eq("a", "ã"));
 
-                    if !self.search_text.is_empty() {
-                        info!("{}", self.search_text);
-                    }
-                    // TODO: cache this and only update when self.search_text changes.
-                    for (chr, name) in &self.char_cache {
-                        if self.search_text.is_empty()
-                            && (self
-                            .categories
-                            .iter()
-                            .filter(|cat| cat.2)
-                            .fold(false, |contained, cat| contained || cat.1.contains(*chr))
+                    let recently_used = self.recently_used.clone();
+                    self.showed_glyph_cache
+                        .iter()
+                        // Filter by category.
+                        .filter(|(&chr, name)| {
+                            !self.search_text.is_empty()
+                                || match self.selected_category {
+                                    0 => recently_used.contains(&chr),
+                                    1 => self.collection.contains(&chr),
+                                    2 => true,
+                                    _ => self.categories[self.selected_category - CAT_START]
+                                        .1
+                                        .contains(chr),
+                                }
+
                             // If no category is selected display all glyphs in the font
-                            || self
+                            /*||
+                            self
                                 .categories
                                 .iter()
-                                .fold(true, |none_selected, cat| none_selected && !cat.2))
-                        {
+                                .fold(true, |none_selected, cat| none_selected && !cat.2)*/
+                        })
+                        .for_each(|(&chr, name)| {
                             let button = egui::Button::new(
                                 egui::RichText::new(chr.to_string())
                                     .font(self.default_font_id.clone()),
@@ -472,7 +622,7 @@ impl eframe::App for GlyphanaApp {
                                 ui.label(format!(
                                     "{}\nU+{:X}\n\nDouble-click to copy 📋",
                                     capitalize(&name),
-                                    *chr as u32
+                                    chr as u32
                                 ));
                             };
 
@@ -484,14 +634,17 @@ impl eframe::App for GlyphanaApp {
                                 .on_hover_ui(tooltip_ui);
 
                             if hover_button.clicked() {
-                                self.selected_char = *chr;
+                                self.selected_char = chr;
+                                self.recently_used.push_back(chr);
+                                if self.recently_used_max_len <= recently_used.len() {
+                                    self.recently_used.pop_front();
+                                }
                             }
 
                             if hover_button.double_clicked() {
                                 ui.output_mut(|o| o.copied_text = chr.to_string());
                             }
-                        }
-                    }
+                        });
                 });
             });
         });
@@ -508,6 +661,49 @@ impl eframe::App for GlyphanaApp {
 }
 
 impl GlyphanaApp {
+    fn update_search_text_and_showed_glyph_cache(&mut self) {
+        self.search_text = self.ui_search_text.clone();
+
+        // Update character cache.
+        if self.search_text.is_empty() {
+            // Use category filtering.
+            self.showed_glyph_cache = self.full_glyph_cache.clone();
+            if 2 == self.selected_category {
+                self.selected_category = 0;
+            }
+        } else {
+            self.selected_category = 2;
+            self.showed_glyph_cache = self
+                .full_glyph_cache
+                .clone()
+                .into_iter()
+                // Filter by search string.
+                .filter(|(chr, name)| {
+                    let mut tmp = [0u8; 4];
+                    let mut tmp2 = [0u8; 4];
+
+                    //let cmp_chr unicode_case_mapping::case_folded(chr).unwrap_or_else(|| chr as _)
+                    let chr_str = chr.encode_utf8(&mut tmp);
+
+                    //info!("{}", chr);
+                    //let cured_chr = decancer::cure(chr_str).into_str();
+
+                    (self.search_name && name.contains(&self.search_text))
+                        || (!self.search_name && self.search_text.contains(&chr.to_string()))
+                        || glyph_names::glyph_name(*chr as _).contains(&self.search_text)
+                        || self
+                            .search_text
+                            .chars()
+                            .find(|&c| {
+                                //cured_chr.chars().next().unwrap() == c ||
+                                unicode_skeleton::confusable([*chr].into_iter(), [c].into_iter())
+                            })
+                            .is_some()
+                })
+                .collect()
+        }
+    }
+
     fn paint_glyph(
         &mut self,
         scale: f32,
@@ -561,7 +757,7 @@ impl GlyphanaApp {
             .linear_multiply(info_text_color.r() as f32 / 255.0);
 
         painter.text(
-            egui::Pos2::new(center.x, top + scale + glyph_scale * 0.025),
+            egui::Pos2::new(center.x, top + scale + glyph_scale * 0.023),
             egui::Align2::CENTER_BOTTOM,
             self.selected_char,
             egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
@@ -590,85 +786,6 @@ impl GlyphanaApp {
                 egui::Pos2::new(right, top + glyph_scale - v_metrics.descent),
             ],
             stroke,
-        );
-
-        let name = textwrap::wrap(
-            &title_case(
-                &unicode_names2::name(self.selected_char)
-                    .map(|name| name.to_string().to_lowercase())
-                    .unwrap_or_else(|| String::new()),
-            ),
-            18,
-        )
-        .join("\n");
-
-        let top_info = top + glyph_scale * 1.6;
-
-        painter.text(
-            egui::Pos2::new(center.x, top_info),
-            egui::Align2::CENTER_TOP,
-            name,
-            egui::FontId::proportional(self.font_size),
-            info_text_color,
-        );
-
-        let unicode_hex: [u8; 4] = bytemuck::cast(self.selected_char);
-        let mut unicode_hex_string = if 0 != unicode_hex[3] {
-            format!("{:02X})\u{2009}", unicode_hex[3])
-        } else {
-            String::new()
-        };
-
-        unicode_hex[..2].iter().rev().for_each(|&uc| {
-            if 0 != uc || !unicode_hex_string.is_empty() {
-                unicode_hex_string += &format!("{:02X}\u{2009}", uc);
-            }
-        });
-
-        painter.text(
-            egui::Pos2::new(center.x, top_info + 4. * self.font_size),
-            egui::Align2::RIGHT_TOP,
-            "Unicode ",
-            egui::FontId::proportional(self.font_size),
-            info_text_color,
-        );
-
-        painter.text(
-            egui::Pos2::new(center.x, top_info + 4. * self.font_size),
-            egui::Align2::LEFT_TOP,
-            format!(" U+{unicode_hex_string}"),
-            egui::FontId::monospace(self.font_size),
-            info_text_color,
-        );
-
-        let mut utf_eight = [0u8; 4];
-        encode_unicode::Utf8Char::new(self.selected_char).to_slice(&mut utf_eight);
-        let mut utf_eight_string = if 0 != utf_eight[3] {
-            format!("{:02X})\u{2009}", utf_eight[3])
-        } else {
-            String::new()
-        };
-
-        utf_eight[..2].iter().rev().for_each(|&uc| {
-            if 0 != uc || !utf_eight_string.is_empty() {
-                utf_eight_string += &format!("{:02X}\u{2009}", uc);
-            }
-        });
-
-        painter.text(
-            egui::Pos2::new(center.x, top_info + 6. * self.font_size),
-            egui::Align2::RIGHT_TOP,
-            "UTF-8 ",
-            egui::FontId::proportional(self.font_size),
-            info_text_color,
-        );
-
-        painter.text(
-            egui::Pos2::new(center.x, top_info + 6. * self.font_size),
-            egui::Align2::LEFT_TOP,
-            format!(" {utf_eight_string}"),
-            egui::FontId::monospace(self.font_size),
-            info_text_color,
         );
 
         ui.expand_to_include_rect(painter.clip_rect());

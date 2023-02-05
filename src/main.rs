@@ -4,8 +4,8 @@ use image::ImageDecoder;
 use include_flate::flate;
 use std::error::Error;
 
-fn load_icon(_path: &str) -> eframe::IconData {
-    flate!(static ICON: [u8] from "assets/icon-480.png");
+fn load_icon() -> eframe::IconData {
+    flate!(static ICON: [u8] from "assets/icon-1024.png");
     let icon: &[u8] = &ICON;
     let (icon_rgba, icon_width, icon_height) = {
         let image = image::codecs::png::PngDecoder::new(icon).expect("Failed to decode icon");
@@ -22,8 +22,6 @@ fn load_icon(_path: &str) -> eframe::IconData {
     }
 }
 
-//const ICON: &[u8] = include_bytes!("../assets/icon-480.png");
-
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn Error>> {
@@ -31,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt::init();
 
     let native_options = eframe::NativeOptions {
-        icon_data: Some(load_icon("assets/icon-480.png")), // an example
+        icon_data: Some(load_icon()), // an example
         ..Default::default()
     };
 

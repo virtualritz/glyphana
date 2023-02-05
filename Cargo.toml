@@ -13,6 +13,7 @@ eframe = { path = "../egui/crates/eframe", default-features = false, features = 
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
+egui_extras = { path = "../egui/crates/egui_extras" }
 
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
