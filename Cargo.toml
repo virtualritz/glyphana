@@ -6,22 +6,17 @@ edition = "2021"
 
 
 [dependencies]
-egui = { path = "../egui/crates/egui" }
-eframe = { path = "../egui/crates/eframe", default-features = false, features = [
+egui = "0.20.1"
+eframe = { version = "0.20.1", default-features = false, features = [
     #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
-egui_extras = { path = "../egui/crates/egui_extras" }
-
-# You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
 unicode-blocks = "0.1.5"
 enum_dispatch = "0.3.11"
 ahash = "0.8.3"
-#emath = "0.20.0"
-#epaint = "0.20.0"
 unicode_names2 = "0.6.0"
 titlecase = "2.2.1"
 log = "0.4.17"
@@ -72,8 +67,8 @@ split-debuginfo = "packed"
 [patch.crates-io]
 
 # If you want to use the bleeding edge version of egui and eframe:
-# egui = { git = "https://github.com/emilk/egui", branch = "master" }
-# eframe = { git = "https://github.com/emilk/egui", branch = "master" }
+egui = { git = "https://github.com/emilk/egui", branch = "master" }
+eframe = { git = "https://github.com/emilk/egui", branch = "master" }
 
 # If you fork https://github.com/emilk/egui you can test with:
 # egui = { path = "../egui/crates/egui" }
