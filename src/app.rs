@@ -286,13 +286,11 @@ impl GlyphanaApp {
         );
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
-            egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(
-                egui::FontTweak {
-                    scale: 0.81,           // make it smaller
-                    y_offset_factor: 0.0, // move it up
-                    y_offset: 0.0,
-                },
-            ),
+            egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
+                scale: 0.81,          // make it smaller
+                y_offset_factor: 0.0, // move it up
+                y_offset: 0.0,
+            }),
         );
 
         fonts.families.insert(
@@ -398,37 +396,33 @@ impl eframe::App for GlyphanaApp {
         egui::SidePanel::left("categories").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 /*egui::Grid::new("custom_categories")
-                    .num_columns(1)
-                    //.spacing([40.0, 4.0])
-                    .striped(true)
-                    .show(ui, |ui| {*/
-                        ui.selectable_value(&mut self.selected_category, 0, "Recently Used");
-                       // ui.end_row();
+                .num_columns(1)
+                //.spacing([40.0, 4.0])
+                .striped(true)
+                .show(ui, |ui| {*/
+                ui.selectable_value(&mut self.selected_category, 0, "Recently Used");
+                // ui.end_row();
 
-                        ui.selectable_value(&mut self.selected_category, 1, "Collection");
-                       // ui.end_row();
+                ui.selectable_value(&mut self.selected_category, 1, "Collection");
+                // ui.end_row();
 
-                        ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
-                            ui.selectable_value(&mut self.selected_category, 2, "Search Text")
-                        });
-                     //   ui.end_row();
-                   // });
+                ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
+                    ui.selectable_value(&mut self.selected_category, 2, "Search Text")
+                });
+                //   ui.end_row();
+                // });
 
                 ui.separator();
 
                 /*egui::Grid::new("categories")
-                    .num_columns(1)
-                    .striped(true)
-                    .show(ui, |ui| {*/
-                        for (i, category) in &mut self.categories.iter().enumerate() {
-                            ui.selectable_value(
-                                &mut self.selected_category,
-                                i + CAT_START,
-                                &category.0,
-                            );
-                            ui.end_row();
-                        }
-                    //});
+                .num_columns(1)
+                .striped(true)
+                .show(ui, |ui| {*/
+                for (i, category) in &mut self.categories.iter().enumerate() {
+                    ui.selectable_value(&mut self.selected_category, i + CAT_START, &category.0);
+                    ui.end_row();
+                }
+                //});
             });
         });
 
@@ -470,7 +464,6 @@ impl eframe::App for GlyphanaApp {
             ui.with_layout(
                 egui::Layout::top_down_justified(egui::Align::Center),
                 |ui| {
-
                     egui::Grid::new("glyph_name")
                         .num_columns(1)
                         //.min_col_width(scale)
@@ -480,19 +473,19 @@ impl eframe::App for GlyphanaApp {
                         .show(ui, |ui| {
                             ui.end_row();
                             ui.centered_and_justified(|ui| {
-                            let name = textwrap::wrap(
-                                &title_case(
-                                    &unicode_names2::name(self.selected_char)
-                                        .map(|name| name.to_string().to_lowercase())
-                                        .unwrap_or_else(|| String::new()),
-                                ),
-                                18,
-                            )
-                            .join("\n");
+                                let name = textwrap::wrap(
+                                    &title_case(
+                                        &unicode_names2::name(self.selected_char)
+                                            .map(|name| name.to_string().to_lowercase())
+                                            .unwrap_or_else(|| String::new()),
+                                    ),
+                                    18,
+                                )
+                                .join("\n");
 
-                            ui.label(name);
+                                ui.label(name);
+                            });
                         });
-                    });
 
                     egui::Grid::new("glyph_codepoints")
                         .num_columns(2)
@@ -520,7 +513,10 @@ impl eframe::App for GlyphanaApp {
                                 }
                             });
 
-                            ui.button(egui::RichText::new(unicode_hex_string).monospace()).on_hover_ui(|ui| { ui.label("Copy Unicode as HTML");});
+                            ui.button(egui::RichText::new(unicode_hex_string).monospace())
+                                .on_hover_ui(|ui| {
+                                    ui.label("Copy Unicode as HTML");
+                                });
 
                             ui.end_row();
 
@@ -545,7 +541,10 @@ impl eframe::App for GlyphanaApp {
                                 }
                             });
 
-                            ui.button(egui::RichText::new(utf_eight_string).monospace()).on_hover_ui(|ui| { ui.label("Copy UTF8 Code");});
+                            ui.button(egui::RichText::new(utf_eight_string).monospace())
+                                .on_hover_ui(|ui| {
+                                    ui.label("Copy UTF8 Code");
+                                });
 
                             ui.end_row();
                         });
@@ -562,7 +561,10 @@ impl eframe::App for GlyphanaApp {
                                     self.collection.contains(&self.selected_char);
 
                                 if ui
-                                    .add(egui::SelectableLabel::new(is_in_collection, "Collected")).on_hover_ui(|ui| { ui.label("Add Glyp to Collection");})
+                                    .add(egui::SelectableLabel::new(is_in_collection, "Collected"))
+                                    .on_hover_ui(|ui| {
+                                        ui.label("Add Glyp to Collection");
+                                    })
                                     .clicked()
                                 {
                                     if is_in_collection {

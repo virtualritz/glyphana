@@ -1,6 +1,6 @@
 [package]
 name = "glyphana"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Moritz Moeller <virtualritz@gmail.com>"]
 edition = "2021"
 
