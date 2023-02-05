@@ -11,7 +11,7 @@ fn load_icon() -> eframe::IconData {
         let image = image::codecs::png::PngDecoder::new(icon).expect("Failed to decode icon");
         let mut rgba = vec![0; image.total_bytes() as _];
         let (width, height) = image.dimensions();
-        image.read_image(&mut rgba);
+        image.read_image(&mut rgba).unwrap();
         (rgba, width, height)
     };
 

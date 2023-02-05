@@ -1,8 +1,6 @@
-use ahash::AHashMap as HashMap;
 use ahash::AHashSet as HashSet;
-
 use enum_dispatch::enum_dispatch;
-use log::info;
+//use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use unicode_blocks as ub;
@@ -56,8 +54,7 @@ trait CharacterInspector {
 impl CharacterInspector for ub::UnicodeBlock {
     fn characters(&self) -> Vec<char> {
         (self.start()..self.end() + 1)
-            .into_iter()
-            .filter_map(|c| char::from_u32(c))
+            .filter_map(char::from_u32)
             .collect()
     }
 
@@ -72,17 +69,12 @@ impl CharacterInspector for UnicodeMultiBlock {
     fn characters(&self) -> Vec<char> {
         self.0
             .iter()
-            .map(|block| {
-                (block.start()..block.end() + 1)
-                    .into_iter()
-                    .filter_map(|c| char::from_u32(c))
-            })
-            .flatten()
+            .flat_map(|block| (block.start()..block.end() + 1).filter_map(char::from_u32))
             .collect()
     }
 
     fn contains(&self, c: char) -> bool {
-        self.0.iter().find(|block| block.contains(c)).is_some()
+        self.0.iter().any(|block| block.contains(c))
     }
 }
 
@@ -91,7 +83,7 @@ struct UnicodeCollection(HashSet<char>);
 
 impl CharacterInspector for UnicodeCollection {
     fn characters(&self) -> Vec<char> {
-        self.0.iter().map(|&c| c).collect()
+        self.0.iter().copied().collect()
     }
 
     fn contains(&self, c: char) -> bool {
@@ -228,9 +220,10 @@ impl GlyphanaApp {
         // Load previous app state (if any).
         // Note that you must enable the `persistence` feature for this to work.
         let mut glyphana = if let Some(storage) = cc.storage {
-            let mut foo: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            foo.pixels_per_point = cc.egui_ctx.pixels_per_point();
-            foo
+            let mut glyphana: Self =
+                eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            glyphana.pixels_per_point = cc.egui_ctx.pixels_per_point();
+            glyphana
         } else {
             Self {
                 pixels_per_point: cc.egui_ctx.pixels_per_point(),
@@ -250,7 +243,7 @@ impl GlyphanaApp {
         glyphana
     }
 
-    fn available_characters(
+    fn _available_characters(
         &self,
         ui: &egui::Ui,
         family: egui::FontFamily,
@@ -263,7 +256,7 @@ impl GlyphanaApp {
                 .iter()
                 .filter(|chr| !chr.is_whitespace() && !chr.is_ascii_control())
                 .map(|&chr| {
-                    println!("{}", chr);
+                    //println!("{}", chr);
                     (chr, char_name(chr))
                 })
                 .collect()
@@ -384,9 +377,10 @@ impl eframe::App for GlyphanaApp {
                             &mut self.search_name,
                             format!("{}", super::DOCUMENT_WITH_TEXT),
                         );
-                    })*/;
+                    })*/
 
-                    if ui.toggle_value(&mut self.search_name, format!("{}", super::DOCUMENT_WITH_TEXT)).on_hover_ui(|ui| { ui.label("Search Glyph Name");}).changed() {
+                    let hover_text =  |ui: &mut egui::Ui| { ui.label("Search Glyph Name");};
+                    if ui.toggle_value(&mut self.search_name, format!("{}", super::DOCUMENT_WITH_TEXT)).on_hover_ui(hover_text).changed() {
                         self.update_search_text_and_showed_glyph_cache();
                     }
                 });
@@ -477,7 +471,7 @@ impl eframe::App for GlyphanaApp {
                                     &title_case(
                                         &unicode_names2::name(self.selected_char)
                                             .map(|name| name.to_string().to_lowercase())
-                                            .unwrap_or_else(|| String::new()),
+                                            .unwrap_or_else(String::new),
                                     ),
                                     18,
                                 )
@@ -509,7 +503,7 @@ impl eframe::App for GlyphanaApp {
 
                             unicode_hex[..2].iter().rev().for_each(|&uc| {
                                 if 0 != uc || !unicode_hex_string.is_empty() {
-                                    unicode_hex_string += &format!("{:02X}\u{2009}", uc);
+                                    unicode_hex_string += &format!("{uc:02X}\u{2009}");
                                 }
                             });
 
@@ -537,7 +531,7 @@ impl eframe::App for GlyphanaApp {
 
                             utf_eight[..2].iter().rev().for_each(|&uc| {
                                 if 0 != uc || !utf_eight_string.is_empty() {
-                                    utf_eight_string += &format!("{:02X}\u{2009}", uc);
+                                    utf_eight_string += &format!("{uc:02X}\u{2009}");
                                 }
                             });
 
@@ -560,11 +554,12 @@ impl eframe::App for GlyphanaApp {
                                 let is_in_collection =
                                     self.collection.contains(&self.selected_char);
 
+                                let hover_text = |ui: &mut egui::Ui| {
+                                    ui.label("Add Glyp to Collection");
+                                };
                                 if ui
                                     .add(egui::SelectableLabel::new(is_in_collection, "Collected"))
-                                    .on_hover_ui(|ui| {
-                                        ui.label("Add Glyp to Collection");
-                                    })
+                                    .on_hover_ui(hover_text)
                                     .clicked()
                                 {
                                     if is_in_collection {
@@ -590,7 +585,7 @@ impl eframe::App for GlyphanaApp {
                     self.showed_glyph_cache
                         .iter()
                         // Filter by category.
-                        .filter(|(&chr, name)| {
+                        .filter(|(&chr, _)| {
                             !self.search_text.is_empty()
                                 || match self.selected_category {
                                     0 => recently_used.contains(&chr),
@@ -623,7 +618,7 @@ impl eframe::App for GlyphanaApp {
                                 );
                                 ui.label(format!(
                                     "{}\nU+{:X}\n\nDouble-click to copy 📋",
-                                    capitalize(&name),
+                                    capitalize(name),
                                     chr as u32
                                 ));
                             };
@@ -681,11 +676,10 @@ impl GlyphanaApp {
                 .into_iter()
                 // Filter by search string.
                 .filter(|(chr, name)| {
-                    let mut tmp = [0u8; 4];
-                    let mut tmp2 = [0u8; 4];
+                    //let mut tmp = [0u8; 4];
 
                     //let cmp_chr unicode_case_mapping::case_folded(chr).unwrap_or_else(|| chr as _)
-                    let chr_str = chr.encode_utf8(&mut tmp);
+                    //let chr_str = chr.encode_utf8(&mut tmp);
 
                     //info!("{}", chr);
                     //let cured_chr = decancer::cure(chr_str).into_str();
@@ -693,14 +687,10 @@ impl GlyphanaApp {
                     (self.search_name && name.contains(&self.search_text))
                         || (!self.search_name && self.search_text.contains(&chr.to_string()))
                         || glyph_names::glyph_name(*chr as _).contains(&self.search_text)
-                        || self
-                            .search_text
-                            .chars()
-                            .find(|&c| {
-                                //cured_chr.chars().next().unwrap() == c ||
-                                unicode_skeleton::confusable([*chr].into_iter(), [c].into_iter())
-                            })
-                            .is_some()
+                        || self.search_text.chars().any(|c| {
+                            //cured_chr.chars().next().unwrap() == c ||
+                            unicode_skeleton::confusable([*chr].into_iter(), [c].into_iter())
+                        })
                 })
                 .collect()
         }
@@ -952,7 +942,7 @@ fn special_char_name(chr: char) -> Option<&'static str> {
     }
 }
 
-fn other_char_name(chr: char) -> Option<&'static str> {
+fn _other_char_name(chr: char) -> Option<&'static str> {
     #[allow(clippy::match_same_arms)] // many "flag"
     match chr {
         // Manually added
