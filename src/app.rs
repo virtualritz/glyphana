@@ -331,8 +331,8 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
             egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
-                scale: 0.73,            // make it smaller
-                y_offset_factor: 0.15,  // move it down
+                scale: 0.73,           // make it smaller
+                y_offset_factor: 0.15, // move it down
                 y_offset: 0.0,
             }),
         );
@@ -347,7 +347,7 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_SYMBOLS2.to_owned(),
             egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).tweak(egui::FontTweak {
-                scale: 0.8,             // make it smaller
+                scale: 0.8,              // make it smaller
                 y_offset_factor: -0.243, // move it up
                 y_offset: 0.0,
             }),
@@ -363,7 +363,7 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_MUSIC.to_owned(),
             egui::FontData::from_static(&NOTO_MUSIC_FONT).tweak(egui::FontTweak {
-                scale: 0.7,             // make it smaller
+                scale: 0.7,          // make it smaller
                 y_offset_factor: 0., // move it up
                 y_offset: 0.0,
             }),

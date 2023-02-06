@@ -37,6 +37,5 @@ flate!(pub static NOTO_SIGN_WRITING_FONT: [u8] from "assets/NotoSansSignWriting-
 pub const NOTO_MUSIC: &str = "noto-music";
 flate!(pub static NOTO_MUSIC_FONT: [u8] from "assets/NotoMusic-Regular.ttf");
 
-
 mod app;
 pub use app::GlyphanaApp;
