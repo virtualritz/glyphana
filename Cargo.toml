@@ -46,7 +46,7 @@ wasm-bindgen-futures = "0.4"
 
 [profile.release]
 opt-level = 3 # 2 = fast and small wasm
-codegen-untis = 1
+codegen-units = 1
 lto = true
 strip = true
 panic = "abort"
