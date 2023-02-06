@@ -127,7 +127,7 @@ impl Default for GlyphanaApp {
             default_font_id: egui::FontId::new(24.0, egui::FontFamily::Name(NOTO_SANS.into())),
             font_size: 18.0,
             recently_used: Default::default(),
-            recently_used_max_len: 4,
+            recently_used_max_len: 1000,
             collection: Default::default(),
             selected_category: Default::default(),
             categories: vec![
@@ -246,6 +246,10 @@ impl Default for GlyphanaApp {
                         ub::GEOMETRIC_SHAPES_EXTENDED,
                     ])),
                 ),
+                (
+                    ub::MUSICAL_SYMBOLS.name().to_string(),
+                    UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
+                ),
             ],
             full_glyph_cache: Default::default(),
             showed_glyph_cache: Default::default(),
@@ -328,8 +332,40 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
             egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
-                scale: 0.73,           // make it smaller
-                y_offset_factor: 0.15, // move it up
+                scale: 0.73,            // make it smaller
+                y_offset_factor: 0.15,  // move it down
+                y_offset: 0.0,
+            }),
+        );
+        fonts.font_data.insert(
+            NOTO_SYMBOLS.to_owned(),
+            egui::FontData::from_static(&NOTO_SYMBOLS_FONT).tweak(egui::FontTweak {
+                scale: 0.9,             // make it smaller
+                y_offset_factor: -0.43, // move it up
+                y_offset: 0.0,
+            }),
+        );
+        fonts.font_data.insert(
+            NOTO_SYMBOLS2.to_owned(),
+            egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).tweak(egui::FontTweak {
+                scale: 0.8,             // make it smaller
+                y_offset_factor: -0.243, // move it up
+                y_offset: 0.0,
+            }),
+        );
+        /*fonts.font_data.insert(
+            NOTO_SIGN_WRITING.to_owned(),
+            egui::FontData::from_static(&NOTO_SIGN_WRITING_FONT).tweak(egui::FontTweak {
+                scale: 1.0,             // make it smaller
+                y_offset_factor: 0.5, // move it up
+                y_offset: 0.0,
+            }),
+        );*/
+        fonts.font_data.insert(
+            NOTO_MUSIC.to_owned(),
+            egui::FontData::from_static(&NOTO_MUSIC_FONT).tweak(egui::FontTweak {
+                scale: 0.7,             // make it smaller
+                y_offset_factor: 0., // move it up
                 y_offset: 0.0,
             }),
         );
@@ -340,6 +376,10 @@ impl GlyphanaApp {
                 NOTO_SANS.to_owned(),
                 NOTO_SANS_MATH.to_owned(),
                 NOTO_EMOJI.to_owned(),
+                NOTO_SYMBOLS.to_owned(),
+                NOTO_SYMBOLS2.to_owned(),
+                //NOTO_SIGN_WRITING.to_owned(),
+                NOTO_MUSIC.to_owned(),
             ],
         );
 
@@ -361,6 +401,11 @@ impl eframe::App for GlyphanaApp {
             // Hamburger menu.
             egui::menu::bar(ui, |ui| {
                 ui.menu_button(format!("{}", super::HAMBURGER), |ui| {
+                    #[cfg(debug_assertions)]
+                    if ui.button("Reset App State").clicked() {
+                        *self = Self::default();
+                    }
+
                     /*if ui.button("Customize List…").clicked() {
                         todo!()
                     }
@@ -494,7 +539,7 @@ impl eframe::App for GlyphanaApp {
             let scale = rect.max.x - rect.min.x;
 
             let (response, painter) =
-                ui.allocate_painter(egui::Vec2::new(scale, 0.9 * scale), egui::Sense::click());
+                ui.allocate_painter(egui::Vec2::new(scale, 1.2 * scale), egui::Sense::click());
 
             //painter.on_hover_ui(ui.label("Click to Copy 📋"));
 
