@@ -1,4 +1,5 @@
 #![warn(clippy::all)]
+#![allow(clippy::blocks_in_if_conditions)]
 #![feature(option_result_contains)]
 #![feature(let_chains)]
 use include_flate::flate;

@@ -1,5 +1,9 @@
 #![warn(clippy::all)]
+#![allow(clippy::blocks_in_if_conditions)]
+#![feature(option_result_contains)]
+#![feature(let_chains)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
+
 use image::ImageDecoder;
 use include_flate::flate;
 use std::error::Error;
