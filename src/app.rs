@@ -133,13 +133,45 @@ impl Default for GlyphanaApp {
             categories: vec![
                 (
                     ub::ARROWS.name().to_string(),
-                    UnicodeCategory::Block(ub::ARROWS),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::ARROWS,
+                        ub::SUPPLEMENTAL_ARROWS_A,
+                        ub::SUPPLEMENTAL_ARROWS_B,
+                        ub::SUPPLEMENTAL_ARROWS_C,
+                    ])),
                 ),
-                /*(
-                    ub::PARENTHESES.name().to_string(),
-                    vec![ub::PARENTHESES]),
-                    false,
-                )*/
+                (
+                    "Parentheses".to_string(),
+                    UnicodeCategory::Collection(UnicodeCollection(
+                        vec![
+                            '\u{0028}', '\u{0029}', '\u{005B}', '\u{005D}', '\u{007B}', '\u{007D}',
+                            '\u{0F3A}', '\u{0F3B}', '\u{0F3C}', '\u{0F3D}', '\u{169B}', '\u{169C}',
+                            '\u{2045}', '\u{2046}', '\u{207D}', '\u{207E}', '\u{208D}', '\u{208E}',
+                            '\u{2308}', '\u{2309}', '\u{230A}', '\u{230B}', '\u{2329}', '\u{232A}',
+                            '\u{2768}', '\u{2769}', '\u{276A}', '\u{276B}', '\u{276C}', '\u{276D}',
+                            '\u{276E}', '\u{276F}', '\u{2770}', '\u{2771}', '\u{2772}', '\u{2773}',
+                            '\u{2774}', '\u{2775}', '\u{27C5}', '\u{27C6}', '\u{27E6}', '\u{27E7}',
+                            '\u{27E8}', '\u{27E9}', '\u{27EA}', '\u{27EB}', '\u{27EC}', '\u{27ED}',
+                            '\u{27EE}', '\u{27EF}', '\u{2983}', '\u{2984}', '\u{2985}', '\u{2986}',
+                            '\u{2987}', '\u{2988}', '\u{2989}', '\u{298A}', '\u{298B}', '\u{298C}',
+                            '\u{298D}', '\u{298E}', '\u{298F}', '\u{2990}', '\u{2991}', '\u{2992}',
+                            '\u{2993}', '\u{2994}', '\u{2995}', '\u{2996}', '\u{2997}', '\u{2998}',
+                            '\u{29D8}', '\u{29D9}', '\u{29DA}', '\u{29DB}', '\u{29FC}', '\u{29FD}',
+                            '\u{2E22}', '\u{2E23}', '\u{2E24}', '\u{2E25}', '\u{2E26}', '\u{2E27}',
+                            '\u{2E28}', '\u{2E29}', '\u{2E55}', '\u{2E56}', '\u{2E57}', '\u{2E58}',
+                            '\u{2E59}', '\u{2E5A}', '\u{2E5B}', '\u{2E5C}', '\u{3008}', '\u{3009}',
+                            '\u{300A}', '\u{300B}', '\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}',
+                            '\u{3010}', '\u{3011}', '\u{3014}', '\u{3015}', '\u{3016}', '\u{3017}',
+                            '\u{3018}', '\u{3019}', '\u{301A}', '\u{301B}', '\u{FE59}', '\u{FE5A}',
+                            '\u{FE5B}', '\u{FE5C}', '\u{FE5D}', '\u{FE5E}', '\u{FF08}', '\u{FF09}',
+                            '\u{FF3B}', '\u{FF3D}', '\u{FF5B}', '\u{FF5D}', '\u{FF5F}', '\u{FF60}',
+                            '\u{FF62}', '\u{FF63}',
+                        ]
+                        .iter()
+                        .copied()
+                        .collect::<HashSet<_>>(),
+                    )),
+                ),
                 (
                     "Punctuation".to_string(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
@@ -177,26 +209,42 @@ impl Default for GlyphanaApp {
                         ub::MAHJONG_TILES,
                         ub::DOMINO_TILES,
                         ub::PLAYING_CARDS,
-                        ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
                         ub::EMOTICONS,
-                        ub::ORNAMENTAL_DINGBATS,
                         ub::TRANSPORT_AND_MAP_SYMBOLS,
                         ub::ALCHEMICAL_SYMBOLS,
-                        ub::GEOMETRIC_SHAPES_EXTENDED,
-                        ub::SUPPLEMENTAL_ARROWS_C,
-                        ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
                         ub::CHESS_SYMBOLS,
                         ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
                         ub::SYMBOLS_FOR_LEGACY_COMPUTING,
                     ])),
                 ),
-                /*(
+                (
+                    "Pictographs".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
+                        ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
+                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                    ])),
+                ),
+                (
                     ub::DINGBATS.name().to_string(),
-                    UnicodeCategory::Block(ub::DINGBATS),
-                ),*/
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::DINGBATS,
+                        ub::ORNAMENTAL_DINGBATS,
+                    ])),
+                ),
                 (
                     ub::MATHEMATICAL_OPERATORS.name().to_string(),
-                    UnicodeCategory::Block(ub::MATHEMATICAL_OPERATORS),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::MATHEMATICAL_OPERATORS,
+                        ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
+                    ])),
+                ),
+                (
+                    ub::GEOMETRIC_SHAPES.name().to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::GEOMETRIC_SHAPES,
+                        ub::GEOMETRIC_SHAPES_EXTENDED,
+                    ])),
                 ),
             ],
             full_glyph_cache: Default::default(),
@@ -280,8 +328,8 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
             egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
-                scale: 0.81,          // make it smaller
-                y_offset_factor: 0.0, // move it up
+                scale: 0.73,           // make it smaller
+                y_offset_factor: 0.15, // move it up
                 y_offset: 0.0,
             }),
         );
@@ -446,7 +494,7 @@ impl eframe::App for GlyphanaApp {
             let scale = rect.max.x - rect.min.x;
 
             let (response, painter) =
-                ui.allocate_painter(egui::Vec2::new(scale, 1.2 * scale), egui::Sense::click());
+                ui.allocate_painter(egui::Vec2::new(scale, 0.9 * scale), egui::Sense::click());
 
             //painter.on_hover_ui(ui.label("Click to Copy 📋"));
 
@@ -495,22 +543,30 @@ impl eframe::App for GlyphanaApp {
 
                             let unicode_hex: [u8; 4] = bytemuck::cast(self.selected_char);
 
-                            let mut unicode_hex_string = String::from("U+");
+                            let mut unicode_hex_string_ui = String::from("U+");
+                            let mut unicode_html_string = String::from("&#");
 
                             if 0 != unicode_hex[3] {
-                                unicode_hex_string += &format!("{:02X}\u{2009}", unicode_hex[3])
+                                unicode_hex_string_ui += &format!("{:02X}\u{2009}", unicode_hex[3]);
+                                unicode_html_string += &format!("{:02X}", unicode_hex[3]);
                             }
 
                             unicode_hex[..2].iter().rev().for_each(|&uc| {
-                                if 0 != uc || !unicode_hex_string.is_empty() {
-                                    unicode_hex_string += &format!("{uc:02X}\u{2009}");
+                                if 0 != uc || !unicode_hex_string_ui.is_empty() {
+                                    unicode_hex_string_ui += &format!("{uc:02X}\u{2009}");
+                                    unicode_html_string += &format!("{uc:02X}");
                                 }
                             });
 
-                            ui.button(egui::RichText::new(unicode_hex_string).monospace())
+                            if ui
+                                .button(egui::RichText::new(unicode_hex_string_ui).monospace())
                                 .on_hover_ui(|ui| {
                                     ui.label("Copy Unicode as HTML");
-                                });
+                                })
+                                .clicked()
+                            {
+                                ui.output_mut(|o| o.copied_text = unicode_html_string);
+                            }
 
                             ui.end_row();
 
@@ -523,22 +579,30 @@ impl eframe::App for GlyphanaApp {
                             encode_unicode::Utf8Char::new(self.selected_char)
                                 .to_slice(&mut utf_eight);
 
-                            let mut utf_eight_string = if 0 != utf_eight[3] {
-                                format!("{:02X}\u{2009}", utf_eight[3])
-                            } else {
-                                String::new()
-                            };
+                            let mut utf_eight_string_ui = String::new();
+                            let mut utf_eight_string = String::new();
+
+                            if 0 != utf_eight[3] {
+                                utf_eight_string_ui += &format!("{:02X}\u{2009}", utf_eight[3]);
+                                utf_eight_string += &format!("{:02X}", utf_eight[3]);
+                            }
 
                             utf_eight[..2].iter().rev().for_each(|&uc| {
                                 if 0 != uc || !utf_eight_string.is_empty() {
-                                    utf_eight_string += &format!("{uc:02X}\u{2009}");
+                                    utf_eight_string_ui += &format!("{uc:02X}\u{2009}");
+                                    utf_eight_string += &format!("{uc:02X}");
                                 }
                             });
 
-                            ui.button(egui::RichText::new(utf_eight_string).monospace())
+                            if ui
+                                .button(egui::RichText::new(utf_eight_string_ui).monospace())
                                 .on_hover_ui(|ui| {
                                     ui.label("Copy UTF8 Code");
-                                });
+                                })
+                                .clicked()
+                            {
+                                ui.output_mut(|o| o.copied_text = utf_eight_string);
+                            }
 
                             ui.end_row();
                         });
@@ -558,7 +622,7 @@ impl eframe::App for GlyphanaApp {
                                     ui.label("Add Glyp to Collection");
                                 };
                                 if ui
-                                    .add(egui::SelectableLabel::new(is_in_collection, "Collected"))
+                                    .add(egui::SelectableLabel::new(is_in_collection, "Collect"))
                                     .on_hover_ui(hover_text)
                                     .clicked()
                                 {
