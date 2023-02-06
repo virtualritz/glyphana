@@ -5,7 +5,7 @@
 [ ] Allow selecting unicode categories via `finl_unicode` crate.
 [ ] Allow fuzzy matching on character names via `ngrammatic` crate.
 [ ] Compare/find matches via case folding/`focaccia` crate.
-
+[ ] Use `unicode_normalization::char::decompose_canonical` to e.g. decompose `'Å'` into `['A','\u{30a}']` and use the first element for search.
 # Left Panel
 
 [x] Display selected char.

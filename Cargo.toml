@@ -3,6 +3,7 @@ name = "glyphana"
 version = "0.1.3"
 authors = ["Moritz Moeller <virtualritz@gmail.com>"]
 edition = "2021"
+description = "Quickly find, inspect & collect unicode glyps"
 
 [dependencies]
 egui = "0.20.1"
