@@ -132,12 +132,56 @@ impl Default for GlyphanaApp {
             selected_category: Default::default(),
             categories: vec![
                 (
+                    "Emoji".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::MAHJONG_TILES,
+                        ub::DOMINO_TILES,
+                        ub::PLAYING_CARDS,
+                        ub::EMOTICONS,
+                        ub::TRANSPORT_AND_MAP_SYMBOLS,
+                        ub::ALCHEMICAL_SYMBOLS,
+                        ub::CHESS_SYMBOLS,
+                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                    ])),
+                ),
+                (
                     ub::ARROWS.name().to_string(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::ARROWS,
                         ub::SUPPLEMENTAL_ARROWS_A,
                         ub::SUPPLEMENTAL_ARROWS_B,
                         ub::SUPPLEMENTAL_ARROWS_C,
+                    ])),
+                ),
+                (
+                    ub::CURRENCY_SYMBOLS.name().to_string(),
+                    UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
+                ),
+                (
+                    "Latin".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::BASIC_LATIN,
+                        ub::LATIN_1_SUPPLEMENT,
+                        ub::LATIN_EXTENDED_ADDITIONAL,
+                        ub::LATIN_EXTENDED_A,
+                        ub::LATIN_EXTENDED_B,
+                        ub::LATIN_EXTENDED_C,
+                        ub::LATIN_EXTENDED_D,
+                        ub::LATIN_EXTENDED_E,
+                        ub::LATIN_EXTENDED_F,
+                        ub::LATIN_EXTENDED_G,
+                    ])),
+                ),
+                (
+                    ub::LETTERLIKE_SYMBOLS.name().to_string(),
+                    UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
+                ),
+                (
+                    "Math Symbols".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::MATHEMATICAL_OPERATORS,
+                        ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
                     ])),
                 ),
                 (
@@ -173,51 +217,6 @@ impl Default for GlyphanaApp {
                     )),
                 ),
                 (
-                    "Punctuation".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::GENERAL_PUNCTUATION,
-                        ub::SUPPLEMENTAL_PUNCTUATION,
-                    ])),
-                ),
-                (
-                    "Latin".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::BASIC_LATIN,
-                        ub::LATIN_1_SUPPLEMENT,
-                        ub::LATIN_EXTENDED_ADDITIONAL,
-                        ub::LATIN_EXTENDED_A,
-                        ub::LATIN_EXTENDED_B,
-                        ub::LATIN_EXTENDED_C,
-                        ub::LATIN_EXTENDED_D,
-                        ub::LATIN_EXTENDED_E,
-                        ub::LATIN_EXTENDED_F,
-                        ub::LATIN_EXTENDED_G,
-                    ])),
-                ),
-                (
-                    ub::CURRENCY_SYMBOLS.name().to_string(),
-                    UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
-                ),
-                //(ub::PICTOGRAPHS.name().to_string(), vec![ub::PICTOGRAPHS]),
-                (
-                    ub::LETTERLIKE_SYMBOLS.name().to_string(),
-                    UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
-                ),
-                (
-                    "Emoji".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MAHJONG_TILES,
-                        ub::DOMINO_TILES,
-                        ub::PLAYING_CARDS,
-                        ub::EMOTICONS,
-                        ub::TRANSPORT_AND_MAP_SYMBOLS,
-                        ub::ALCHEMICAL_SYMBOLS,
-                        ub::CHESS_SYMBOLS,
-                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
-                    ])),
-                ),
-                (
                     "Pictographs".to_string(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
@@ -226,17 +225,17 @@ impl Default for GlyphanaApp {
                     ])),
                 ),
                 (
+                    "Punctuation".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::GENERAL_PUNCTUATION,
+                        ub::SUPPLEMENTAL_PUNCTUATION,
+                    ])),
+                ),
+                (
                     ub::DINGBATS.name().to_string(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::DINGBATS,
                         ub::ORNAMENTAL_DINGBATS,
-                    ])),
-                ),
-                (
-                    ub::MATHEMATICAL_OPERATORS.name().to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MATHEMATICAL_OPERATORS,
-                        ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
                     ])),
                 ),
                 (
@@ -468,12 +467,12 @@ impl eframe::App for GlyphanaApp {
                     ui.add_enabled_ui(!self.case_sensitive, |ui| {
                         ui.toggle_value(
                             &mut self.search_name,
-                            format!("{}", super::DOCUMENT_WITH_TEXT),
+                            format!("{}", super::NAME_BADGE),
                         );
                     })*/
 
                     let hover_text =  |ui: &mut egui::Ui| { ui.label("Search Glyph Name");};
-                    if ui.toggle_value(&mut self.search_name, format!("{}", super::DOCUMENT_WITH_TEXT)).on_hover_ui(hover_text).changed() {
+                    if ui.toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE)).on_hover_ui(hover_text).changed() {
                         self.update_search_text_and_showed_glyph_cache();
                     }
                 });

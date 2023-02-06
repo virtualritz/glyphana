@@ -8,7 +8,7 @@ pub const CANCELLATION: char = '🗙';
 pub const COG_WHEEL: char = '⚙';
 pub const HAMBURGER: char = '☰';
 pub const MAGNIFIER: char = '🔍';
-pub const DOCUMENT_WITH_TEXT: char = '🖹';
+pub const NAME_BADGE: char = '📛';
 pub const SUBSET: char = '⊂';
 
 pub const NOTO_SANS: &str = "noto-sans";
