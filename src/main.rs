@@ -8,22 +8,10 @@ use image::ImageDecoder;
 use include_flate::flate;
 use std::error::Error;
 
-fn load_icon() -> eframe::IconData {
-    flate!(static ICON: [u8] from "assets/icon-1024.png");
-    let icon: &[u8] = &ICON;
-    let (icon_rgba, icon_width, icon_height) = {
-        let image = image::codecs::png::PngDecoder::new(icon).expect("Failed to decode icon");
-        let mut rgba = vec![0; image.total_bytes() as _];
-        let (width, height) = image.dimensions();
-        image.read_image(&mut rgba).unwrap();
-        (rgba, width, height)
-    };
-
-    eframe::IconData {
-        rgba: icon_rgba,
-        width: icon_width,
-        height: icon_height,
-    }
+#[derive(Debug)]
+struct MyTray {
+    selected_option: usize,
+    checked: bool,
 }
 
 // When compiling natively:
@@ -32,8 +20,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
     tracing_subscriber::fmt::init();
 
+    let icon = load_icon();
+
+    /*
+    let tray_icon = tray_icon::TrayIconBuilder::new()
+        .with_tooltip("Glyphana unicode glyph helper")
+        .with_icon(tray_icon::icon::Icon::from_rgba(icon.rgba,icon.width, icon.height).unwrap())
+        .build()
+        .unwrap();*/
+
     let native_options = eframe::NativeOptions {
-        icon_data: Some(load_icon()), // an example
+        icon_data: Some(icon), // an example
         ..Default::default()
     };
 
@@ -66,4 +63,23 @@ fn main() {
         .await
         .expect("failed to start eframe");
     });
+}
+
+fn load_icon() -> eframe::IconData {
+    flate!(static ICON: [u8] from "assets/icon-1024.png");
+    let icon: &[u8] = &ICON;
+
+    let (icon_rgba, icon_width, icon_height) = {
+        let image = image::codecs::png::PngDecoder::new(icon).expect("Failed to decode icon");
+        let mut rgba = vec![0; image.total_bytes() as _];
+        let (width, height) = image.dimensions();
+        image.read_image(&mut rgba).unwrap();
+        (rgba, width, height)
+    };
+
+    eframe::IconData {
+        rgba: icon_rgba,
+        width: icon_width,
+        height: icon_height,
+    }
 }

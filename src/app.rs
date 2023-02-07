@@ -32,6 +32,8 @@ pub struct GlyphanaApp {
     #[serde(skip)]
     search_text: String,
     #[serde(skip)]
+    split_search_text: Vec<String>,
+    #[serde(skip)]
     default_font_id: egui::FontId,
     #[serde(skip)]
     font_size: f32,
@@ -121,6 +123,7 @@ impl Default for GlyphanaApp {
             selected_char: Default::default(),
             ui_search_text: Default::default(),
             search_text: Default::default(),
+            split_search_text: Default::default(),
             search_only_categories: false,
             case_sensitive: false,
             search_name: false,
@@ -134,13 +137,9 @@ impl Default for GlyphanaApp {
                 (
                     "Emoji".to_string(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MAHJONG_TILES,
-                        ub::DOMINO_TILES,
-                        ub::PLAYING_CARDS,
                         ub::EMOTICONS,
                         ub::TRANSPORT_AND_MAP_SYMBOLS,
                         ub::ALCHEMICAL_SYMBOLS,
-                        ub::CHESS_SYMBOLS,
                         ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
                         ub::SYMBOLS_FOR_LEGACY_COMPUTING,
                     ])),
@@ -248,6 +247,15 @@ impl Default for GlyphanaApp {
                 (
                     ub::MUSICAL_SYMBOLS.name().to_string(),
                     UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
+                ),
+                (
+                    "Game Symbols".to_string(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::MAHJONG_TILES,
+                        ub::DOMINO_TILES,
+                        ub::PLAYING_CARDS,
+                        ub::CHESS_SYMBOLS,
+                    ])),
                 ),
             ],
             full_glyph_cache: Default::default(),
@@ -445,34 +453,47 @@ impl eframe::App for GlyphanaApp {
 
                     // Fill character chache.
                     if self.full_glyph_cache.is_empty() {
-                        self.full_glyph_cache = available_characters(ui, self.default_font_id.family.clone());
+                        self.full_glyph_cache =
+                            available_characters(ui, self.default_font_id.family.clone());
                         self.showed_glyph_cache = self.full_glyph_cache.clone();
                     }
 
                     // ;
 
-                    if ui.add(egui::TextEdit::singleline(&mut self.ui_search_text).hint_text("🔍 Search")).changed() {
+                    if ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.ui_search_text)
+                                .hint_text("🔍 Search"),
+                        )
+                        .changed()
+                    {
                         self.update_search_text_and_showed_glyph_cache();
                     }
                     //self.search_text = decancer::cure(&self.ui_search_text).into_str();
 
                     //.desired_width(120.0))
-                            ;
-                    /*if !self.case_sensitive {
+                    if !self.case_sensitive {
                         self.search_text = self.search_text.to_lowercase();
-                    }*/
+                    }
 
-
-                    /*ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"));
-                    ui.add_enabled_ui(!self.case_sensitive, |ui| {
+                    ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"))
+                        .on_hover_ui(|ui| {
+                            ui.label("Match Case");
+                        });
+                    /*ui.add_enabled_ui(!self.case_sensitive, |ui| {
                         ui.toggle_value(
                             &mut self.search_name,
                             format!("{}", super::NAME_BADGE),
                         );
                     })*/
 
-                    let hover_text =  |ui: &mut egui::Ui| { ui.label("Search Glyph Name");};
-                    if ui.toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE)).on_hover_ui(hover_text).changed() {
+                    if ui
+                        .toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE))
+                        .on_hover_ui(|ui| {
+                            ui.label("Search Glyph Name");
+                        })
+                        .changed()
+                    {
                         self.update_search_text_and_showed_glyph_cache();
                     }
                 });
@@ -493,7 +514,7 @@ impl eframe::App for GlyphanaApp {
                 // ui.end_row();
 
                 ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
-                    ui.selectable_value(&mut self.selected_category, 2, "Search Text")
+                    ui.selectable_value(&mut self.selected_category, 2, "Search")
                 });
                 //   ui.end_row();
                 // });
@@ -738,16 +759,14 @@ impl eframe::App for GlyphanaApp {
                                 )
                                 .on_hover_ui(tooltip_ui);
 
-                            if hover_button.clicked() {
+                            if hover_button.double_clicked() {
+                                ui.output_mut(|o| o.copied_text = chr.to_string());
+                            } else if hover_button.clicked() {
                                 self.selected_char = chr;
                                 self.recently_used.push_back(chr);
                                 if self.recently_used_max_len <= recently_used.len() {
                                     self.recently_used.pop_front();
                                 }
-                            }
-
-                            if hover_button.double_clicked() {
-                                ui.output_mut(|o| o.copied_text = chr.to_string());
                             }
                         });
                 });
@@ -765,9 +784,21 @@ impl eframe::App for GlyphanaApp {
     }
 }
 
+// .auto_shrink([false;2])
 impl GlyphanaApp {
     fn update_search_text_and_showed_glyph_cache(&mut self) {
         self.search_text = self.ui_search_text.clone();
+        self.split_search_text = self
+            .search_text
+            .split(' ')
+            .filter_map(|s| {
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s.to_string().to_lowercase())
+                }
+            })
+            .collect();
 
         // Update character cache.
         if self.search_text.is_empty() {
@@ -792,12 +823,29 @@ impl GlyphanaApp {
                     //info!("{}", chr);
                     //let cured_chr = decancer::cure(chr_str).into_str();
 
-                    (self.search_name && name.contains(&self.search_text))
+                    let chr = if self.case_sensitive {
+                        *chr
+                    } else {
+                        let lower_case = unicode_case_mapping::to_lowercase(*chr);
+                        match lower_case[0] {
+                            0 => *chr,
+                            _ => char::from_u32(lower_case[0]).unwrap(),
+                        }
+                    };
+
+                    (self.search_name
+                        && self
+                            .split_search_text
+                            .iter()
+                            .any(|text| name.contains(text)))
                         || (!self.search_name && self.search_text.contains(&chr.to_string()))
-                        || glyph_names::glyph_name(*chr as _).contains(&self.search_text)
+                        || self
+                            .split_search_text
+                            .iter()
+                            .any(|text| glyph_names::glyph_name(chr as _).contains(text))
                         || self.search_text.chars().any(|c| {
                             //cured_chr.chars().next().unwrap() == c ||
-                            unicode_skeleton::confusable([*chr].into_iter(), [c].into_iter())
+                            unicode_skeleton::confusable([chr].into_iter(), [c].into_iter())
                         })
                 })
                 .collect()
