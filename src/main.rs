@@ -8,12 +8,6 @@ use image::ImageDecoder;
 use include_flate::flate;
 use std::error::Error;
 
-#[derive(Debug)]
-struct MyTray {
-    selected_option: usize,
-    checked: bool,
-}
-
 // When compiling natively:
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn Error>> {

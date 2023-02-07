@@ -476,7 +476,7 @@ impl eframe::App for GlyphanaApp {
                         self.search_text = self.search_text.to_lowercase();
                     }
 
-                    ui.toggle_value(&mut self.case_sensitive, format!("{}", "Aa"))
+                    ui.toggle_value(&mut self.case_sensitive, "Aa".to_string())
                         .on_hover_ui(|ui| {
                             ui.label("Match Case");
                         });
