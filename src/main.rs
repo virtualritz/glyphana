@@ -14,17 +14,56 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
     tracing_subscriber::fmt::init();
 
+    //gtk::init().unwrap();
+
     let icon = load_icon();
 
     /*
-    let tray_icon = tray_icon::TrayIconBuilder::new()
-        .with_tooltip("Glyphana unicode glyph helper")
-        .with_icon(tray_icon::icon::Icon::from_rgba(icon.rgba,icon.width, icon.height).unwrap())
-        .build()
-        .unwrap();*/
+    let tray_icon = {
+        let icon = icon.clone();
+        tray_icon::icon::Icon::from_rgba(icon.rgba, icon.width, icon.height).unwrap()
+    };
+
+    #[cfg(target_os = "linux")]
+    std::thread::spawn(move || {
+        gtk::init().unwrap();
+
+        use tray_icon::{
+            menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem},
+            TrayIconBuilder,
+        };
+
+        let tray_menu = Box::new(Menu::new());
+        let quit = MenuItem::new("Quit Glyphana", true, None);
+        tray_menu.append_items(&[
+            &PredefinedMenuItem::about(
+                None,
+                Some(AboutMetadata {
+                    name: Some("Glyphana".to_string()),
+                    copyright: Some("Copyright Moritz Moeller 2023".to_string()),
+                    ..Default::default()
+                }),
+            ),
+            &PredefinedMenuItem::separator(),
+            &quit,
+        ]);
+
+        let _tray_icon = TrayIconBuilder::new()
+            .with_menu(tray_menu)
+            .with_icon(tray_icon)
+            .build()
+            .unwrap();
+
+        gtk::main();
+    });
+
+    #[cfg(not(target_os = "linux"))]
+    let _tray_icon = TrayIconBuilder::new().with_icon(tray_icon).build().unwrap();
+    */
 
     let native_options = eframe::NativeOptions {
-        icon_data: Some(icon), // an example
+        icon_data: Some(icon),
+        //renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
 
@@ -35,28 +74,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     )?;
 
     Ok(())
-}
-
-// when compiling to web using trunk.
-#[cfg(target_arch = "wasm32")]
-fn main() {
-    // Make sure panics are logged using `console.error`.
-    console_error_panic_hook::set_once();
-
-    // Redirect tracing to console.log and friends:
-    tracing_wasm::set_as_global_default();
-
-    let web_options = eframe::WebOptions::default();
-
-    wasm_bindgen_futures::spawn_local(async {
-        eframe::start_web(
-            "the_canvas_id", // hardcode it
-            web_options,
-            Box::new(|cc| Box::new(eframe_template::TemplateApp::new(cc))),
-        )
-        .await
-        .expect("failed to start eframe");
-    });
 }
 
 fn load_icon() -> eframe::IconData {

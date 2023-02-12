@@ -34,6 +34,8 @@ pub struct GlyphanaApp {
     #[serde(skip)]
     split_search_text: Vec<String>,
     #[serde(skip)]
+    split_search_text_lower: Vec<String>,
+    #[serde(skip)]
     default_font_id: egui::FontId,
     #[serde(skip)]
     font_size: f32,
@@ -124,6 +126,7 @@ impl Default for GlyphanaApp {
             ui_search_text: Default::default(),
             search_text: Default::default(),
             split_search_text: Default::default(),
+            split_search_text_lower: Default::default(),
             search_only_categories: false,
             case_sensitive: false,
             search_name: false,
@@ -334,14 +337,17 @@ impl GlyphanaApp {
         );
         fonts.font_data.insert(
             NOTO_SANS_MATH.to_owned(),
-            egui::FontData::from_static(&NOTO_SANS_MATH_FONT),
+            egui::FontData::from_static(&NOTO_SANS_MATH_FONT).tweak(egui::FontTweak {
+                y_offset_factor: -0.27, // move it up
+                ..Default::default()
+            }),
         );
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
             egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
                 scale: 0.73,           // make it smaller
                 y_offset_factor: 0.15, // move it down
-                y_offset: 0.0,
+                ..Default::default()
             }),
         );
         fonts.font_data.insert(
@@ -349,7 +355,7 @@ impl GlyphanaApp {
             egui::FontData::from_static(&NOTO_SYMBOLS_FONT).tweak(egui::FontTweak {
                 scale: 0.9,             // make it smaller
                 y_offset_factor: -0.43, // move it up
-                y_offset: 0.0,
+                ..Default::default()
             }),
         );
         fonts.font_data.insert(
@@ -357,7 +363,7 @@ impl GlyphanaApp {
             egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).tweak(egui::FontTweak {
                 scale: 0.8,              // make it smaller
                 y_offset_factor: -0.243, // move it up
-                y_offset: 0.0,
+                ..Default::default()
             }),
         );
         /*fonts.font_data.insert(
@@ -365,15 +371,14 @@ impl GlyphanaApp {
             egui::FontData::from_static(&NOTO_SIGN_WRITING_FONT).tweak(egui::FontTweak {
                 scale: 1.0,             // make it smaller
                 y_offset_factor: 0.5, // move it up
-                y_offset: 0.0,
+                ..Default::default()
             }),
         );*/
         fonts.font_data.insert(
             NOTO_MUSIC.to_owned(),
             egui::FontData::from_static(&NOTO_MUSIC_FONT).tweak(egui::FontTweak {
-                scale: 0.7,          // make it smaller
-                y_offset_factor: 0., // move it up
-                y_offset: 0.0,
+                scale: 0.7, // make it smaller
+                ..Default::default()
             }),
         );
 
@@ -403,6 +408,10 @@ impl eframe::App for GlyphanaApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
         //self.update_search_text_and_showed_glyph_cache();
+
+        /*if let Ok(event) = tray_icon::TrayEvent::receiver().try_recv() {
+            info!("tray event: {event:?}");
+        }*/
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // Hamburger menu.
@@ -490,7 +499,7 @@ impl eframe::App for GlyphanaApp {
                     if ui
                         .toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE))
                         .on_hover_ui(|ui| {
-                            ui.label("Search Glyph Name");
+                            ui.label("Include Glyph Name in Search");
                         })
                         .changed()
                     {
@@ -626,7 +635,7 @@ impl eframe::App for GlyphanaApp {
                             if ui
                                 .button(egui::RichText::new(unicode_hex_string_ui).monospace())
                                 .on_hover_ui(|ui| {
-                                    ui.label("Copy Unicode as HTML");
+                                    ui.label("Click to Copy Unicode as HTML");
                                 })
                                 .clicked()
                             {
@@ -662,7 +671,7 @@ impl eframe::App for GlyphanaApp {
                             if ui
                                 .button(egui::RichText::new(utf_eight_string_ui).monospace())
                                 .on_hover_ui(|ui| {
-                                    ui.label("Copy UTF8 Code");
+                                    ui.label("Click to Copy UTF8 Code");
                                 })
                                 .clicked()
                             {
@@ -760,7 +769,14 @@ impl eframe::App for GlyphanaApp {
                                 .on_hover_ui(tooltip_ui);
 
                             if hover_button.double_clicked() {
+                                // Send to clipboard.
                                 ui.output_mut(|o| o.copied_text = chr.to_string());
+
+                                /*use enigo::KeyboardControllable;
+                                let mut enigo = enigo::Enigo::new();
+                                let alt_tab = "{+ALT}{TAB}{-ALT}".to_string();
+                                enigo.key_sequence_parse(&(alt_tab.clone() + &chr.to_string() + &alt_tab))
+                                */
                             } else if hover_button.clicked() {
                                 self.selected_char = chr;
                                 self.recently_used.push_back(chr);
@@ -795,9 +811,14 @@ impl GlyphanaApp {
                 if s.is_empty() {
                     None
                 } else {
-                    Some(s.to_string().to_lowercase())
+                    Some(s.to_string())
                 }
             })
+            .collect();
+        self.split_search_text_lower = self
+            .split_search_text
+            .iter()
+            .map(|s| s.to_lowercase())
             .collect();
 
         // Update character cache.
@@ -822,25 +843,25 @@ impl GlyphanaApp {
 
                     //info!("{}", chr);
                     //let cured_chr = decancer::cure(chr_str).into_str();
-
-                    let chr = if self.case_sensitive {
-                        *chr
-                    } else {
-                        let lower_case = unicode_case_mapping::to_lowercase(*chr);
-                        match lower_case[0] {
-                            0 => *chr,
-                            _ => char::from_u32(lower_case[0]).unwrap(),
+                    let chr = match self.case_sensitive {
+                        true => *chr,
+                        false => {
+                            let lower_case = unicode_case_mapping::to_lowercase(*chr);
+                            match lower_case[0] {
+                                0 => *chr,
+                                _ => char::from_u32(lower_case[0]).unwrap(),
+                            }
                         }
                     };
 
                     (self.search_name
                         && self
-                            .split_search_text
+                            .split_search_text_lower
                             .iter()
                             .any(|text| name.contains(text)))
                         || (!self.search_name && self.search_text.contains(&chr.to_string()))
                         || self
-                            .split_search_text
+                            .split_search_text_lower
                             .iter()
                             .any(|text| glyph_names::glyph_name(chr as _).contains(text))
                         || self.search_text.chars().any(|c| {
