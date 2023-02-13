@@ -4,6 +4,8 @@
 
 Glyphana is a tool to search for and discover unicode glyphs. It is inspired by the macOS Character Viewer which I sorely miss on Linux and Windows.
 
+![Searching for the characters contained in 'grinning cat' as well as matching the term agains each glyp's description](screenshot.png)
+
 ## Installation & Updates
 
 For now you need to have [Rust installed](https://www.rust-lang.org/tools/install).
