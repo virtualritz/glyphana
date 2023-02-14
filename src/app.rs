@@ -467,20 +467,19 @@ impl eframe::App for GlyphanaApp {
                         self.showed_glyph_cache = self.full_glyph_cache.clone();
                     }
 
-                    // ;
-
                     if ui
                         .add(
                             egui::TextEdit::singleline(&mut self.ui_search_text)
+                                //.desired_width(120.0)
                                 .hint_text("🔍 Search"),
                         )
+
                         .changed()
                     {
                         self.update_search_text_and_showed_glyph_cache();
                     }
                     //self.search_text = decancer::cure(&self.ui_search_text).into_str();
 
-                    //.desired_width(120.0))
                     if !self.case_sensitive {
                         self.search_text = self.search_text.to_lowercase();
                     }

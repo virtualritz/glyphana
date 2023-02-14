@@ -4,6 +4,8 @@ version = "0.1.3"
 authors = ["Moritz Moeller <virtualritz@gmail.com>"]
 edition = "2021"
 description = "Quickly find, inspect & collect unicode glyps"
+rust-version = "1.69"
+license = "(MIT OR Apache-2.0 OR BSD-3-Clause) AND OFL-1.1"
 
 [dependencies]
 ahash = "0.8.3"
@@ -14,7 +16,7 @@ eframe = { version = "0.21.2", default-features = false, features = [
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
-    #"wgpu"
+    #"wgpu"           # Alternative backend if "glow" gives your trouble.
 ] }
 egui = "0.21.0"
 encode_unicode = "1.0.0"
@@ -23,10 +25,10 @@ enum_dispatch = "0.3.11"
 focaccia = "1.3.1"
 font = "0.10.10"
 glyph-names = "0.2.0"
-gtk = "0.16"
+gtk = "0.17"
 html-escape = "0.2.13"
 image = { version = "0.24.5", default-features = false, features = ["png"] }
-include-flate = "0.1.4"
+include-flate = "0.2.0"
 log = "0.4.17"
 rusttype = "0.9.3"
 serde = { version = "1", features = ["derive"] }
@@ -64,5 +66,6 @@ inherits = "release"
 egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
 eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
 unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
+decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
 #tray-icon = { git = "https://github.com/tauri-apps/tray-icon.git", branch = "dev" }
 # enigo = { git = "https://github.com/enigo-rs/enigo.git", branch = "master" }
