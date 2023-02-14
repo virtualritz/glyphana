@@ -1,4 +1,11 @@
-# Search Field
+# To Do
+
+## Code
+
+* [ ] Cleanup.
+* [ ] Refactoring into modules.
+
+## Search Field
 
 * [x] Search all characters in the search string in the font.
 * [x] Use search string to find characters in the Adobe glyph database
@@ -12,20 +19,20 @@
       decompose `'Å'` into `['A','\u{30a}']` and use the first element
       for search.
 
-# Left Panel
+## Left Panel
 
 * [x] Display selected char.
 * [ ] Convert case for selected char via `unicode-case-mapping` crate.
 * [ ] Display character variants in middle panel (including ligatures).
 
-# Middle Panel
+## Middle Panel
 
 * [ ] Color background of each glyph by match %. Green = max match.
       Orange = min match.
 
-# Right Panel
+## Right Panel
 
-* [ ] Display horizontal glyph metrics
-* [ ] Fix width of Unicode/UTF-8 area (egui issue)
-* [ ] Block resizing area if character name, Unicode/UTF-8 and
-      Collect button would be pushed outside of window bounds
+* [ ] Display horizontal glyph metrics.
+* [ ] Fix width of Unicode/UTF-8 area (`egui` issue).
+* [ ] Block resizing panel area if character name, Unicode/UTF-8 and
+      `Collect` button would be pushed outside of window bounds.

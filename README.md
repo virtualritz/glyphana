@@ -9,6 +9,10 @@ which I sorely miss on Linux and Windows.
 ![Searching for the characters contained in 'grinning cat' as well as matching
 the term against each glyp's description](screenshot.png)
 
+## Caveat
+
+This was hacked over the course of a few free hours here and there.
+
 It currently is limited to most of functionality I personally miss from Character Viewer.
 I.e. it is far from feature parity with this tool.
 
