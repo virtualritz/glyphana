@@ -8,14 +8,14 @@ It is inspired by the [macOS Character Viewer](https://support.apple.com/guide/m
 which I sorely miss on Linux and Windows.
 
 ![Searching for the characters contained in 'grinning cat' as well as matching
-the term against each glyp's description](screenshot.png)
+the term against each glyph's description](https://github.com/virtualritz/glyphana/blob/master/screenshot.png)
 
 ## Caveat
 
 This was hacked over the course of a few free hours here and there.
 
 It currently is limited to most of the functionality I personally miss from
-Character Viewer. I.e. it is far from feature parity with this tool.
+Character Viewer. I.e. it is far from feature parity with the latter.
 
 It also lacks the abilit of Windows Character Map to compose strings. A feature
 I miss from Character Viewer and plan to add.
