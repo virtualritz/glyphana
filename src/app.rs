@@ -473,7 +473,6 @@ impl eframe::App for GlyphanaApp {
                                 //.desired_width(120.0)
                                 .hint_text("🔍 Search"),
                         )
-
                         .changed()
                     {
                         self.update_search_text_and_showed_glyph_cache();
