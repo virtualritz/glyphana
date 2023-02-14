@@ -63,9 +63,9 @@ inherits = "release"
 #split-debuginfo = "packed"
 
 [patch.crates-io]
-egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
-eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
-unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
-decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
+#egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
+#eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
+#unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
+#decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
 #tray-icon = { git = "https://github.com/tauri-apps/tray-icon.git", branch = "dev" }
 # enigo = { git = "https://github.com/enigo-rs/enigo.git", branch = "master" }

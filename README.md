@@ -2,8 +2,9 @@
 
 [![Build Status](https://github.com/virtualritz/glyphana/workflows/CI/badge.svg)](https://github.com/virtualritz/glyphana/actions?workflow=CI)
 
-Glyphana is a tool to search for and discover unicode glyphs. It is inspired by
-the [macOS Character Viewer](https://support.apple.com/guide/mac-help/use-emoji-and-symbols-on-mac-mchlp1560/mac)
+Glyphana is a tool to search for and discover unicode glyphs.
+
+It is inspired by the [macOS Character Viewer](https://support.apple.com/guide/mac-help/use-emoji-and-symbols-on-mac-mchlp1560/mac)
 which I sorely miss on Linux and Windows.
 
 ![Searching for the characters contained in 'grinning cat' as well as matching
@@ -13,11 +14,11 @@ the term against each glyp's description](screenshot.png)
 
 This was hacked over the course of a few free hours here and there.
 
-It currently is limited to most of functionality I personally miss from Character Viewer.
-I.e. it is far from feature parity with this tool.
+It currently is limited to most of the functionality I personally miss from
+Character Viewer. I.e. it is far from feature parity with this tool.
 
-It also lacks the abilit of Windows Character Map to compose strings which is a
-feature I miss from Character Viewer and plan to add.
+It also lacks the abilit of Windows Character Map to compose strings. A feature
+I miss from Character Viewer and plan to add.
 
 ## Installation & Updates
 
