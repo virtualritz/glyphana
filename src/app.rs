@@ -489,18 +489,15 @@ impl eframe::App for GlyphanaApp {
                         .on_hover_ui(|ui| {
                             ui.label("Match Case");
                         });
-                    /*ui.add_enabled_ui(!self.case_sensitive, |ui| {
-                        ui.toggle_value(
-                            &mut self.search_name,
-                            format!("{}", super::NAME_BADGE),
-                        );
-                    })*/
 
                     if ui
-                        .toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE))
-                        .on_hover_ui(|ui| {
-                            ui.label("Include Glyph Name in Search");
+                        .add_enabled_ui(!self.case_sensitive, |ui| {
+                            ui.toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE))
+                                .on_hover_ui(|ui| {
+                                    ui.label("Include Glyph Name in Search");
+                                })
                         })
+                        .response
                         .changed()
                     {
                         self.update_search_text_and_showed_glyph_cache();
