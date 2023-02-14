@@ -5,6 +5,10 @@
 * [ ] Cleanup.
 * [ ] Refactoring into modules.
 
+## Tray Icon
+
+* [ ] Trayt icon menu messages are not reaching the `update()` method.
+
 ## Search Field
 
 * [x] Search all characters in the search string in the font.

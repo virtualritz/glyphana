@@ -50,11 +50,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
     tracing_subscriber::fmt::init();
 
-    //gtk::init().unwrap();
-
     let icon = load_icon();
 
-    /*
+    /* Tray icon stuff: works but no menu messages reach the GlyphanaApp::update()
+     * method.
+
     let tray_icon = {
         let icon = icon.clone();
         tray_icon::icon::Icon::from_rgba(icon.rgba, icon.width, icon.height).unwrap()
