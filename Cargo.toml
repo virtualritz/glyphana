@@ -11,7 +11,7 @@ license = "(MIT OR Apache-2.0 OR BSD-3-Clause) AND OFL-1.1"
 ahash = "0.8.3"
 bytemuck = "1.13.0"
 decancer = "1.5.3"
-eframe = { version = "0.21.2", default-features = false, features = [
+eframe = { version = "0.21.3", default-features = false, features = [
     #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
@@ -19,6 +19,7 @@ eframe = { version = "0.21.2", default-features = false, features = [
     #"wgpu"           # Alternative backend if "glow" gives your trouble.
 ] }
 egui = "0.21.0"
+egui_dnd = "0.3.0"
 encode_unicode = "1.0.0"
 #enigo = "0.0.14"
 enum_dispatch = "0.3.11"
@@ -63,9 +64,9 @@ inherits = "release"
 #split-debuginfo = "packed"
 
 [patch.crates-io]
-#egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
-#eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
-#unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
+egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
+eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
+unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
 #decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
 #tray-icon = { git = "https://github.com/tauri-apps/tray-icon.git", branch = "dev" }
 # enigo = { git = "https://github.com/enigo-rs/enigo.git", branch = "master" }

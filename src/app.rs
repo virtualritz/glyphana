@@ -1,13 +1,23 @@
 use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
 //use log::info;
+use egui_dnd::{utils::shift_vec, DragDropItem, DragDropUi};
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, VecDeque};
+use std::{hash::{Hasher, Hash}, collections::{BTreeMap, VecDeque}};
 use unicode_blocks as ub;
+use include_flate::lazy_static;
 
 use crate::*;
 
-const CAT_START: usize = 3;
+static RECENTLY_USED: &str = "Recently Used";
+static COLLECTION: &str = "Collection";
+static SEARCH: &str = "Search";
+lazy_static! {
+    static ref RECENTLY_USED_ID: egui::Id = egui::Id::new(RECENTLY_USED);
+    static ref COLLECTION_ID: egui::Id = egui::Id::new(COLLECTION);
+    static ref SEARCH_ID: egui::Id = egui::Id::new(SEARCH);
+}
+
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 // if we add new fields, give them default values when deserializing old state
@@ -27,7 +37,7 @@ pub struct GlyphanaApp {
     recently_used: VecDeque<char>,
     recently_used_max_len: usize,
     collection: HashSet<char>,
-    selected_category: usize,
+    selected_category: egui::Id,
     ui_search_text: String,
     #[serde(skip)]
     search_text: String,
@@ -39,8 +49,10 @@ pub struct GlyphanaApp {
     default_font_id: egui::FontId,
     #[serde(skip)]
     font_size: f32,
+
+    categories: Vec<Category>,
     #[serde(skip)]
-    categories: Vec<(String, UnicodeCategory)>,
+    categories_ui: DragDropUi,
     #[serde(skip)]
     full_glyph_cache: BTreeMap<char, String>,
     #[serde(skip)]
@@ -48,6 +60,30 @@ pub struct GlyphanaApp {
     pixels_per_point: f32,
     glyph_scale: GlyphScale,
 }
+
+#[derive(serde::Deserialize, serde::Serialize, Default)]
+#[serde(default)]
+struct Category{
+    name: String,
+    #[serde(skip)]
+    unicode_category: UnicodeCategory
+}
+
+impl Category {
+    pub fn new(name: &str, unicode_category: UnicodeCategory) -> Self {
+        Self {
+            name: name.to_string(),
+            unicode_category,
+        }
+    }
+}
+
+impl Hash for Category {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+}
+
 
 #[enum_dispatch]
 trait CharacterInspector {
@@ -102,6 +138,12 @@ enum UnicodeCategory {
     Collection(UnicodeCollection),
 }
 
+impl Default for UnicodeCategory {
+    fn default() -> Self {
+        UnicodeCategory::Block(ub::ADLAM)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 enum GlyphScale {
     Small,
@@ -135,33 +177,38 @@ impl Default for GlyphanaApp {
             recently_used: Default::default(),
             recently_used_max_len: 1000,
             collection: Default::default(),
-            selected_category: Default::default(),
+            selected_category: *RECENTLY_USED_ID,
+            categories_ui: Default::default(),
             categories: vec![
-                (
-                    "Emoji".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::EMOTICONS,
-                        ub::TRANSPORT_AND_MAP_SYMBOLS,
-                        ub::ALCHEMICAL_SYMBOLS,
-                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
-                    ])),
+
+                    Category::new(
+                        "Emoji",
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::EMOTICONS,
+                            ub::TRANSPORT_AND_MAP_SYMBOLS,
+                            ub::ALCHEMICAL_SYMBOLS,
+                            ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                            ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                        ])),
+                    ),
+
+                Category::new(
+
+                        ub::ARROWS.name(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::ARROWS,
+                            ub::SUPPLEMENTAL_ARROWS_A,
+                            ub::SUPPLEMENTAL_ARROWS_B,
+                            ub::SUPPLEMENTAL_ARROWS_C,
+                        ])),
+
                 ),
-                (
-                    ub::ARROWS.name().to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::ARROWS,
-                        ub::SUPPLEMENTAL_ARROWS_A,
-                        ub::SUPPLEMENTAL_ARROWS_B,
-                        ub::SUPPLEMENTAL_ARROWS_C,
-                    ])),
-                ),
-                (
-                    ub::CURRENCY_SYMBOLS.name().to_string(),
+                Category::new(
+                    ub::CURRENCY_SYMBOLS.name(),
                     UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
                 ),
-                (
-                    "Latin".to_string(),
+                Category::new(
+                    "Latin",
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::BASIC_LATIN,
                         ub::LATIN_1_SUPPLEMENT,
@@ -175,19 +222,19 @@ impl Default for GlyphanaApp {
                         ub::LATIN_EXTENDED_G,
                     ])),
                 ),
-                (
-                    ub::LETTERLIKE_SYMBOLS.name().to_string(),
+                Category::new(
+                    ub::LETTERLIKE_SYMBOLS.name(),
                     UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
                 ),
-                (
-                    "Math Symbols".to_string(),
+                Category::new(
+                    "Math Symbols",
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::MATHEMATICAL_OPERATORS,
                         ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
                     ])),
                 ),
-                (
-                    "Parentheses".to_string(),
+                Category::new(
+                    "Parentheses",
                     UnicodeCategory::Collection(UnicodeCollection(
                         vec![
                             '\u{0028}', '\u{0029}', '\u{005B}', '\u{005D}', '\u{007B}', '\u{007D}',
@@ -218,41 +265,41 @@ impl Default for GlyphanaApp {
                         .collect::<HashSet<_>>(),
                     )),
                 ),
-                (
-                    "Pictographs".to_string(),
+                Category::new(
+                    "Pictographs",
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
                         ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
                         ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
                     ])),
                 ),
-                (
-                    "Punctuation".to_string(),
+                Category::new(
+                    "Punctuation",
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::GENERAL_PUNCTUATION,
                         ub::SUPPLEMENTAL_PUNCTUATION,
                     ])),
                 ),
-                (
-                    ub::DINGBATS.name().to_string(),
+                Category::new(
+                    ub::DINGBATS.name(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::DINGBATS,
                         ub::ORNAMENTAL_DINGBATS,
                     ])),
                 ),
-                (
-                    ub::GEOMETRIC_SHAPES.name().to_string(),
+                Category::new(
+                    ub::GEOMETRIC_SHAPES.name(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::GEOMETRIC_SHAPES,
                         ub::GEOMETRIC_SHAPES_EXTENDED,
                     ])),
                 ),
-                (
-                    ub::MUSICAL_SYMBOLS.name().to_string(),
+                Category::new(
+                    ub::MUSICAL_SYMBOLS.name(),
                     UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
                 ),
-                (
-                    "Game Symbols".to_string(),
+                Category::new(
+                    "Game Symbols",
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::MAHJONG_TILES,
                         ub::DOMINO_TILES,
@@ -299,7 +346,7 @@ impl GlyphanaApp {
         );
 
         if !glyphana.ui_search_text.is_empty() {
-            glyphana.selected_category = 2;
+            glyphana.selected_category = egui::Id::new("Search");
         }
 
         glyphana
@@ -504,6 +551,8 @@ impl eframe::App for GlyphanaApp {
             });
         });
 
+
+
         egui::SidePanel::left("categories").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 /*egui::Grid::new("custom_categories")
@@ -511,14 +560,17 @@ impl eframe::App for GlyphanaApp {
                 //.spacing([40.0, 4.0])
                 .striped(true)
                 .show(ui, |ui| {*/
-                ui.selectable_value(&mut self.selected_category, 0, "Recently Used");
+                let name = "Recently Used";
+                ui.selectable_value(&mut self.selected_category, egui::Id::new(name), name);
                 // ui.end_row();
 
-                ui.selectable_value(&mut self.selected_category, 1, "Collection");
+                let name = "Collection";
+                ui.selectable_value(&mut self.selected_category, egui::Id::new(name), name);
                 // ui.end_row();
 
                 ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
-                    ui.selectable_value(&mut self.selected_category, 2, "Search")
+                    let name = "Search";
+                    ui.selectable_value(&mut self.selected_category, egui::Id::new(name), name)
                 });
                 //   ui.end_row();
                 // });
@@ -529,21 +581,35 @@ impl eframe::App for GlyphanaApp {
                 .num_columns(1)
                 .striped(true)
                 .show(ui, |ui| {*/
-                for (i, category) in &mut self.categories.iter().enumerate() {
-                    ui.selectable_value(&mut self.selected_category, i + CAT_START, &category.0);
-                    ui.end_row();
+               /*  for (i, category) in &mut self.categories.iter().enumerate() {
+                    ui.selectable_value(&mut self.selected_category, i + CAT_START, &category.name);
+                    //ui.end_row();
+                }*/
+
+                let response = self
+                    .categories_ui
+                    .ui::<Category>(ui, self.categories.iter_mut(), |item, ui, handle| {
+                        ui.horizontal(|ui| {
+                        // Anything in the handle can be used to drag the item
+                        handle.ui(ui, item, |ui| {
+                            ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
+                        });
+                    });
+
+                    });
+                if let Some(response) = response.completed {
+                    shift_vec(response.from, response.to, &mut self.categories);
                 }
                 //});
             });
         });
 
-        match self.selected_category {
-            2 => self.update_search_text_and_showed_glyph_cache(),
-            _ => {
-                self.search_text.clear();
-                self.showed_glyph_cache = self.full_glyph_cache.clone();
-            } //self.update_search_text_and_showed_glyph_cache();
-        }
+        if *SEARCH_ID == self.selected_category {
+            self.update_search_text_and_showed_glyph_cache();
+        } else {
+            self.search_text.clear();
+            self.showed_glyph_cache = self.full_glyph_cache.clone();
+        } //self.update_search_text_and_showed_glyph_cache();
 
         egui::SidePanel::right("character_preview").show(ctx, |ui| {
             //egui::ScrollArea::vertical().show(ui, |ui| {
@@ -720,13 +786,18 @@ impl eframe::App for GlyphanaApp {
                         // Filter by category.
                         .filter(|(&chr, _)| {
                             !self.search_text.is_empty()
-                                || match self.selected_category {
-                                    0 => recently_used.contains(&chr),
-                                    1 => self.collection.contains(&chr),
-                                    2 => true,
-                                    _ => self.categories[self.selected_category - CAT_START]
-                                        .1
-                                        .contains(chr),
+                                ||
+                                if *RECENTLY_USED_ID == self.selected_category {
+                                    recently_used.contains(&chr)
+                                } else if *COLLECTION_ID == self.selected_category {
+                                    self.collection.contains(&chr)
+                                } else if *SEARCH_ID == self.selected_category {
+                                    true
+                                } else {
+                                    match self.categories.iter().find(|c| self.selected_category == egui::Id::new(c)) {
+                                            Some(c) => c.unicode_category.contains(chr),
+                                            None => unreachable!()
+                                    }
                                 }
 
                             // If no category is selected display all glyphs in the font
@@ -820,11 +891,11 @@ impl GlyphanaApp {
         if self.search_text.is_empty() {
             // Use category filtering.
             self.showed_glyph_cache = self.full_glyph_cache.clone();
-            if 2 == self.selected_category {
-                self.selected_category = 0;
+            if *SEARCH_ID == self.selected_category {
+                self.selected_category = *RECENTLY_USED_ID;
             }
         } else {
-            self.selected_category = 2;
+            self.selected_category = *SEARCH_ID;
             self.showed_glyph_cache = self
                 .full_glyph_cache
                 .clone()
