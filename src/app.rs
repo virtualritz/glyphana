@@ -592,8 +592,9 @@ impl eframe::App for GlyphanaApp {
                         ui.horizontal(|ui| {
                         // Anything in the handle can be used to drag the item
                         handle.ui(ui, item, |ui| {
-                            ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
+                            ui.label("☰");
                         });
+                        ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
                     });
 
                     });
