@@ -21,6 +21,7 @@ egui = "0.21"
 encode_unicode = "1.0.0"
 #enigo = "0.0.14"
 enum_dispatch = "0.3.11"
+finl_unicode = "1.2.0"
 glyph-names = "0.2.0"
 image = { version = "0.24.5", default-features = false, features = ["png"] }
 include-flate = "0.2.0"

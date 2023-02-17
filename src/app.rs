@@ -1,6 +1,7 @@
 use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
 //use log::info;
+use finl_unicode::categories::CharacterCategories;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use unicode_blocks as ub;
@@ -483,7 +484,7 @@ impl eframe::App for GlyphanaApp {
                         self.search_text = self.search_text.to_lowercase();
                     }
 
-                    ui.toggle_value(&mut self.case_sensitive, "Aa".to_string())
+                    ui.toggle_value(&mut self.case_sensitive, "🗛".to_string())
                         .on_hover_ui(|ui| {
                             ui.label("Match Case");
                         });
@@ -596,6 +597,46 @@ impl eframe::App for GlyphanaApp {
 
                                 ui.label(name);
                             });
+
+                            ui.end_row();
+                        });
+
+                    egui::Grid::new("flip_case")
+                        .num_columns(1)
+                        //.min_col_width(scale)
+                        //.spacing([40.0, 4.0])
+                        .striped(true)
+                        .show(ui, |ui| {
+                            ui.centered_and_justified(|ui| {
+                                let is_cased = self.selected_char.is_letter_cased();
+
+                                let (can_be_flipped, flipped_case) =
+                                    if self.selected_char.is_letter_uppercase() {
+                                        let flipped_case =
+                                            unicode_case_mapping::to_lowercase(self.selected_char);
+                                        (
+                                            0 != flipped_case[0] && 0 == flipped_case[1],
+                                            flipped_case[0],
+                                        )
+                                    } else {
+                                        let flipped_case =
+                                            unicode_case_mapping::to_uppercase(self.selected_char);
+                                        (
+                                            0 != flipped_case[0] && 0 == flipped_case[1],
+                                            flipped_case[0],
+                                        )
+                                    };
+
+                                if ui
+                                    .add_enabled(is_cased && can_be_flipped, |ui: &mut egui::Ui| {
+                                        ui.button("Flip Case")
+                                    })
+                                    .clicked()
+                                {
+                                    self.selected_char = char::from_u32(flipped_case).unwrap()
+                                };
+                            });
+                            ui.end_row();
                         });
 
                     egui::Grid::new("glyph_codepoints")
@@ -683,16 +724,16 @@ impl eframe::App for GlyphanaApp {
                         .striped(true)
                         .show(ui, |ui| {
                             ui.end_row();
+
                             ui.centered_and_justified(|ui| {
                                 let is_in_collection =
                                     self.collection.contains(&self.selected_char);
 
-                                let hover_text = |ui: &mut egui::Ui| {
-                                    ui.label("Add Glyp to Collection");
-                                };
                                 if ui
                                     .add(egui::SelectableLabel::new(is_in_collection, "Collect"))
-                                    .on_hover_ui(hover_text)
+                                    .on_hover_ui(|ui: &mut egui::Ui| {
+                                        ui.label("Add Glyp to Collection");
+                                    })
                                     .clicked()
                                 {
                                     if is_in_collection {
@@ -702,6 +743,7 @@ impl eframe::App for GlyphanaApp {
                                     }
                                 }
                             });
+                            ui.end_row();
                         });
                 },
             );
