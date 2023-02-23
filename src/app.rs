@@ -255,7 +255,7 @@ impl Default for GlyphanaApp {
                     UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
                 ),
                 (
-                    "Game Symbols".to_string(),
+                    "Boargame Symbols".to_string(),
                     UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
                         ub::MAHJONG_TILES,
                         ub::DOMINO_TILES,
