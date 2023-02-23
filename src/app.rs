@@ -9,46 +9,6 @@ use unicode_blocks as ub;
 use crate::*;
 
 const CAT_START: usize = 3;
-// We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
-// if we add new fields, give them default values when deserializing old state
-#[serde(default)]
-pub struct GlyphanaApp {
-    // The category the user selected for inspection.
-    //selected_category: usize;
-    // The character the user selected for inspection.
-    selected_char: char,
-    // The string the user entered into the search field.
-    // Whether to onlky search in the subsets selected on the left panel.
-    search_only_categories: bool,
-    // Also search the glyph's name.
-    search_name: bool,
-    // If search is case sensitive.
-    case_sensitive: bool,
-    recently_used: VecDeque<char>,
-    recently_used_max_len: usize,
-    collection: HashSet<char>,
-    selected_category: usize,
-    ui_search_text: String,
-    #[serde(skip)]
-    search_text: String,
-    #[serde(skip)]
-    split_search_text: Vec<String>,
-    #[serde(skip)]
-    split_search_text_lower: Vec<String>,
-    #[serde(skip)]
-    default_font_id: egui::FontId,
-    #[serde(skip)]
-    font_size: f32,
-    #[serde(skip)]
-    categories: Vec<(String, UnicodeCategory)>,
-    #[serde(skip)]
-    full_glyph_cache: BTreeMap<char, String>,
-    #[serde(skip)]
-    showed_glyph_cache: BTreeMap<char, String>,
-    pixels_per_point: f32,
-    glyph_scale: GlyphScale,
-}
 
 #[enum_dispatch]
 trait CharacterInspector {
@@ -118,6 +78,48 @@ impl From<GlyphScale> for f32 {
             GlyphScale::Large => 36.0,
         }
     }
+}
+
+// We derive Deserialize/Serialize so we can persist app state on shutdown.
+#[derive(serde::Deserialize, serde::Serialize)]
+// if we add new fields, give them default values when deserializing old state
+#[serde(default)]
+pub struct GlyphanaApp {
+    // The category the user selected for inspection.
+    //selected_category: usize;
+    // The character the user selected for inspection.
+    selected_char: char,
+    // The string the user entered into the search field.
+    // Whether to onlky search in the subsets selected on the left panel.
+    search_only_categories: bool,
+    // Also search the glyph's name.
+    search_name: bool,
+    // If search is case sensitive.
+    case_sensitive: bool,
+    recently_used: VecDeque<char>,
+    recently_used_max_len: usize,
+    collection: HashSet<char>,
+    selected_category: usize,
+    ui_search_text: String,
+    #[serde(skip)]
+    search_text: String,
+    #[serde(skip)]
+    split_search_text: Vec<String>,
+    #[serde(skip)]
+    split_search_text_lower: Vec<String>,
+    #[serde(skip)]
+    default_font_id: egui::FontId,
+    #[serde(skip)]
+    font_size: f32,
+    #[serde(skip)]
+    categories: Vec<(String, UnicodeCategory)>,
+    #[serde(skip)]
+    full_glyph_cache: BTreeMap<char, String>,
+    #[serde(skip)]
+    showed_glyph_cache: BTreeMap<char, String>,
+    pixels_per_point: f32,
+    glyph_scale: GlyphScale,
+    stay_on_top: bool,
 }
 
 impl Default for GlyphanaApp {
@@ -267,6 +269,7 @@ impl Default for GlyphanaApp {
 
             pixels_per_point: Default::default(),
             glyph_scale: GlyphScale::Medium,
+            stay_on_top: false,
         }
     }
 }
@@ -407,12 +410,24 @@ impl eframe::App for GlyphanaApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
         //self.update_search_text_and_showed_glyph_cache();
 
         /*if let Ok(event) = tray_icon::TrayEvent::receiver().try_recv() {
             info!("tray event: {event:?}");
+        }
+
+        use tray_icon::menu::MenuEvent;
+        if let Ok(event) = MenuEvent::receiver().try_recv() {
+            match event.id {
+                2 => { info!("Baaaaar"); frame.set_always_on_top(true) },
+                4 => frame.close(),
+                _ => unreachable!(),
+            };
         }*/
+
+        // Update global app state.
+        frame.set_always_on_top(self.stay_on_top);
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // Hamburger menu.
@@ -452,13 +467,19 @@ impl eframe::App for GlyphanaApp {
                     ui.separator();
 
                     if ui.button("Quit").clicked() {
-                        _frame.close();
+                        frame.close();
                     }
                 });
 
+                ui.toggle_value(&mut self.stay_on_top, format!("{}", super::PUSH_PIN))
+                    .on_hover_ui(|ui| {
+                        ui.label("Pin Glyphana Window to Top");
+                    });
+
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(format!("{}", super::CANCELLATION)).clicked() {
-                        self.search_text.clear();
+                        self.ui_search_text.clear();
+                        self.update_search_text_and_showed_glyph_cache();
                     }
 
                     // Fill character chache.
@@ -484,10 +505,13 @@ impl eframe::App for GlyphanaApp {
                         self.search_text = self.search_text.to_lowercase();
                     }
 
-                    ui.toggle_value(&mut self.case_sensitive, "🗛".to_string())
-                        .on_hover_ui(|ui| {
-                            ui.label("Match Case");
-                        });
+                    ui.toggle_value(
+                        &mut self.case_sensitive,
+                        format!("{}", super::UPPER_LOWER_CASE),
+                    )
+                    .on_hover_ui(|ui| {
+                        ui.label("Match Case");
+                    });
 
                     if ui
                         .add_enabled_ui(!self.case_sensitive, |ui| {

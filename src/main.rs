@@ -7,6 +7,11 @@
 use image::ImageDecoder;
 use include_flate::flate;
 use std::error::Error;
+/*use tray_icon::{
+    icon::Icon,
+    menu::{Menu, MenuItem, PredefinedMenuItem},
+    TrayIconBuilder,
+};*/
 
 mod app;
 pub use app::GlyphanaApp;
@@ -16,6 +21,8 @@ pub const COG_WHEEL: char = '⚙';
 pub const HAMBURGER: char = '☰';
 pub const MAGNIFIER: char = '🔍';
 pub const NAME_BADGE: char = '📛';
+pub const UPPER_LOWER_CASE: char = '🗛';
+pub const PUSH_PIN: char = '📌';
 pub const SUBSET: char = '⊂';
 
 pub const NOTO_SANS: &str = "noto-sans";
@@ -57,31 +64,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let tray_icon = {
         let icon = icon.clone();
-        tray_icon::icon::Icon::from_rgba(icon.rgba, icon.width, icon.height).unwrap()
+        Icon::from_rgba(icon.rgba, icon.width, icon.height).unwrap()
     };
 
     #[cfg(target_os = "linux")]
     std::thread::spawn(move || {
         gtk::init().unwrap();
 
-        use tray_icon::{
-            menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem},
-            TrayIconBuilder,
-        };
-
         let tray_menu = Box::new(Menu::new());
-        let quit = MenuItem::new("Quit Glyphana", true, None);
+
         tray_menu.append_items(&[
-            &PredefinedMenuItem::about(
-                None,
-                Some(AboutMetadata {
-                    name: Some("Glyphana".to_string()),
-                    copyright: Some("Copyright Moritz Moeller 2023".to_string()),
-                    ..Default::default()
-                }),
-            ),
+            &MenuItem::new("Open Glyphana", true, None),
             &PredefinedMenuItem::separator(),
-            &quit,
+            &MenuItem::new("Quit Glyphana", true, None),
         ]);
 
         let _tray_icon = TrayIconBuilder::new()
@@ -94,7 +89,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
 
     #[cfg(not(target_os = "linux"))]
-    let _tray_icon = TrayIconBuilder::new().with_icon(tray_icon).build().unwrap();
+    let tray_menu = Box::new(Menu::new());
+
+    #[cfg(not(target_os = "linux"))]
+    tray_menu.append_items(&[
+        &PredefinedMenuItem::show_all(Some("Open Glyphana")),
+        &PredefinedMenuItem::separator(),
+        &PredefinedMenuItem::quit(Some("Quit Glyphana")),
+    ]);
+
+    #[cfg(not(target_os = "linux"))]
+    let _tray_icon = TrayIconBuilder::new()
+        .with_menu(tray_menu)
+        .with_icon(tray_icon)
+        .build()
+        .unwrap();
     */
 
     let native_options = eframe::NativeOptions {
