@@ -1,1 +1,3 @@
 assets/* linguist-vendored
+wix/* linguist-vendored
+*.html linguist-vendored
