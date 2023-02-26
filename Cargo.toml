@@ -5,6 +5,10 @@ authors = ["Moritz Moeller <virtualritz@gmail.com>"]
 edition = "2021"
 description = "Quickly find, inspect & collect unicode glyps"
 license = "(MIT OR Apache-2.0 OR BSD-3-Clause) AND OFL-1.1"
+exclude = [".github/**/*", "crates/**/*"]
+readme = "README.md"
+documentation = "https://docs.rs/glyphana/"
+repository = "https://github.com/virtualritz/glyphana/"
 
 [dependencies]
 ahash = "0.8.3"
