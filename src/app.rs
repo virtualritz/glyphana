@@ -1,7 +1,7 @@
 use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
-//use log::info;
 use finl_unicode::categories::CharacterCategories;
+use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use unicode_blocks as ub;
@@ -28,6 +28,7 @@ impl CharacterInspector for ub::UnicodeBlock {
     }
 }
 
+#[derive(Clone, Debug, Default)]
 struct UnicodeMultiBlock(Vec<ub::UnicodeBlock>);
 
 impl CharacterInspector for UnicodeMultiBlock {
@@ -43,7 +44,7 @@ impl CharacterInspector for UnicodeMultiBlock {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 struct UnicodeCollection(HashSet<char>);
 
 impl CharacterInspector for UnicodeCollection {
@@ -56,11 +57,33 @@ impl CharacterInspector for UnicodeCollection {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+struct NamedUnicodeCollections(Vec<(String, HashSet<char>)>);
+
+impl CharacterInspector for NamedUnicodeCollections {
+    fn characters(&self) -> Vec<char> {
+        self.0
+            .iter()
+            .flat_map(|collection: &(String, HashSet<char>)| {
+                collection.1.iter().copied().collect::<Vec<_>>()
+            })
+            .collect()
+    }
+
+    fn contains(&self, c: char) -> bool {
+        self.0
+            .iter()
+            .any(|collection: &(String, HashSet<char>)| collection.1.get(&c).is_some())
+    }
+}
+
+#[derive(Clone, Debug)]
 #[enum_dispatch(CharacterInspector)]
 enum UnicodeCategory {
     Block(ub::UnicodeBlock),
     MultiBlock(UnicodeMultiBlock),
     Collection(UnicodeCollection),
+    NamedCollections(NamedUnicodeCollections),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -116,10 +139,12 @@ pub struct GlyphanaApp {
     #[serde(skip)]
     full_glyph_cache: BTreeMap<char, String>,
     #[serde(skip)]
-    showed_glyph_cache: BTreeMap<char, String>,
+    shown_glyph_cache: BTreeMap<char, String>,
     pixels_per_point: f32,
     glyph_scale: GlyphScale,
     stay_on_top: bool,
+    #[serde(skip)]
+    show_prefs: bool,
 }
 
 impl Default for GlyphanaApp {
@@ -139,137 +164,224 @@ impl Default for GlyphanaApp {
             recently_used_max_len: 1000,
             collection: Default::default(),
             selected_category: Default::default(),
-            categories: vec![
-                (
-                    "Emoji".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::EMOTICONS,
-                        ub::TRANSPORT_AND_MAP_SYMBOLS,
-                        ub::ALCHEMICAL_SYMBOLS,
-                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
-                    ])),
-                ),
-                (
-                    ub::ARROWS.name().to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::ARROWS,
-                        ub::SUPPLEMENTAL_ARROWS_A,
-                        ub::SUPPLEMENTAL_ARROWS_B,
-                        ub::SUPPLEMENTAL_ARROWS_C,
-                    ])),
-                ),
-                (
-                    ub::CURRENCY_SYMBOLS.name().to_string(),
-                    UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
-                ),
-                (
-                    "Latin".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::BASIC_LATIN,
-                        ub::LATIN_1_SUPPLEMENT,
-                        ub::LATIN_EXTENDED_ADDITIONAL,
-                        ub::LATIN_EXTENDED_A,
-                        ub::LATIN_EXTENDED_B,
-                        ub::LATIN_EXTENDED_C,
-                        ub::LATIN_EXTENDED_D,
-                        ub::LATIN_EXTENDED_E,
-                        ub::LATIN_EXTENDED_F,
-                        ub::LATIN_EXTENDED_G,
-                    ])),
-                ),
-                (
-                    ub::LETTERLIKE_SYMBOLS.name().to_string(),
-                    UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
-                ),
-                (
-                    "Math Symbols".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MATHEMATICAL_OPERATORS,
-                        ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
-                    ])),
-                ),
-                (
-                    "Parentheses".to_string(),
-                    UnicodeCategory::Collection(UnicodeCollection(
-                        vec![
-                            '\u{0028}', '\u{0029}', '\u{005B}', '\u{005D}', '\u{007B}', '\u{007D}',
-                            '\u{0F3A}', '\u{0F3B}', '\u{0F3C}', '\u{0F3D}', '\u{169B}', '\u{169C}',
-                            '\u{2045}', '\u{2046}', '\u{207D}', '\u{207E}', '\u{208D}', '\u{208E}',
-                            '\u{2308}', '\u{2309}', '\u{230A}', '\u{230B}', '\u{2329}', '\u{232A}',
-                            '\u{2768}', '\u{2769}', '\u{276A}', '\u{276B}', '\u{276C}', '\u{276D}',
-                            '\u{276E}', '\u{276F}', '\u{2770}', '\u{2771}', '\u{2772}', '\u{2773}',
-                            '\u{2774}', '\u{2775}', '\u{27C5}', '\u{27C6}', '\u{27E6}', '\u{27E7}',
-                            '\u{27E8}', '\u{27E9}', '\u{27EA}', '\u{27EB}', '\u{27EC}', '\u{27ED}',
-                            '\u{27EE}', '\u{27EF}', '\u{2983}', '\u{2984}', '\u{2985}', '\u{2986}',
-                            '\u{2987}', '\u{2988}', '\u{2989}', '\u{298A}', '\u{298B}', '\u{298C}',
-                            '\u{298D}', '\u{298E}', '\u{298F}', '\u{2990}', '\u{2991}', '\u{2992}',
-                            '\u{2993}', '\u{2994}', '\u{2995}', '\u{2996}', '\u{2997}', '\u{2998}',
-                            '\u{29D8}', '\u{29D9}', '\u{29DA}', '\u{29DB}', '\u{29FC}', '\u{29FD}',
-                            '\u{2E22}', '\u{2E23}', '\u{2E24}', '\u{2E25}', '\u{2E26}', '\u{2E27}',
-                            '\u{2E28}', '\u{2E29}', '\u{2E55}', '\u{2E56}', '\u{2E57}', '\u{2E58}',
-                            '\u{2E59}', '\u{2E5A}', '\u{2E5B}', '\u{2E5C}', '\u{3008}', '\u{3009}',
-                            '\u{300A}', '\u{300B}', '\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}',
-                            '\u{3010}', '\u{3011}', '\u{3014}', '\u{3015}', '\u{3016}', '\u{3017}',
-                            '\u{3018}', '\u{3019}', '\u{301A}', '\u{301B}', '\u{FE59}', '\u{FE5A}',
-                            '\u{FE5B}', '\u{FE5C}', '\u{FE5D}', '\u{FE5E}', '\u{FF08}', '\u{FF09}',
-                            '\u{FF3B}', '\u{FF3D}', '\u{FF5B}', '\u{FF5D}', '\u{FF5F}', '\u{FF60}',
-                            '\u{FF62}', '\u{FF63}',
-                        ]
+            categories: {
+                let custom = vec![
+                    (
+                        "Emoji".to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::EMOTICONS,
+                            ub::TRANSPORT_AND_MAP_SYMBOLS,
+                            ub::ALCHEMICAL_SYMBOLS,
+                            ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                            ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                        ])),
+                    ),
+                    (
+                        ub::ARROWS.name().to_string(),
+                        UnicodeCategory::NamedCollections(NamedUnicodeCollections({
+                            let arrows = UnicodeMultiBlock(vec![
+                                ub::ARROWS,
+                                ub::SUPPLEMENTAL_ARROWS_A,
+                                ub::SUPPLEMENTAL_ARROWS_B,
+                                ub::SUPPLEMENTAL_ARROWS_C,
+                            ])
+                            .characters();
+
+                            vec![
+                                (
+                                    "Left Arrows".to_string(),
+                                    HashSet::<char>::from_iter(arrows.iter().filter_map(|&c| {
+                                        if char_name(c).contains("left") {
+                                            Some(c)
+                                        } else {
+                                            None
+                                        }
+                                    })),
+                                ),
+                                (
+                                    "Right Arrows".to_string(),
+                                    HashSet::<char>::from_iter(arrows.iter().filter_map(|&c| {
+                                        if char_name(c).contains("right") {
+                                            Some(c)
+                                        } else {
+                                            None
+                                        }
+                                    })),
+                                ),
+                                (
+                                    "Up Arrows".to_string(),
+                                    HashSet::<char>::from_iter(arrows.iter().filter_map(|&c| {
+                                        if char_name(c).contains("up") {
+                                            Some(c)
+                                        } else {
+                                            None
+                                        }
+                                    })),
+                                ),
+                                (
+                                    "Down Arrows".to_string(),
+                                    HashSet::<char>::from_iter(arrows.iter().filter_map(|&c| {
+                                        if char_name(c).contains("down") {
+                                            Some(c)
+                                        } else {
+                                            None
+                                        }
+                                    })),
+                                ),
+                                (
+                                    "Other Arrows".to_string(),
+                                    HashSet::<char>::from_iter(arrows.iter().filter_map(|&c| {
+                                        let n = char_name(c);
+                                        if n.contains("circle")
+                                            || n.contains("west")
+                                            || n.contains("east")
+                                            || n.contains("up")
+                                            || n.contains("down")
+                                            || n.contains("shaft")
+                                        {
+                                            Some(c)
+                                        } else {
+                                            None
+                                        }
+                                    })),
+                                ),
+                            ]
+                        })),
+                    ),
+                    (
+                        ub::CURRENCY_SYMBOLS.name().to_string(),
+                        UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
+                    ),
+                    (
+                        "Latin".to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::BASIC_LATIN,
+                            ub::LATIN_1_SUPPLEMENT,
+                            ub::LATIN_EXTENDED_ADDITIONAL,
+                            ub::LATIN_EXTENDED_A,
+                            ub::LATIN_EXTENDED_B,
+                            ub::LATIN_EXTENDED_C,
+                            ub::LATIN_EXTENDED_D,
+                            ub::LATIN_EXTENDED_E,
+                            ub::LATIN_EXTENDED_F,
+                            ub::LATIN_EXTENDED_G,
+                        ])),
+                    ),
+                    (
+                        ub::LETTERLIKE_SYMBOLS.name().to_string(),
+                        UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
+                    ),
+                    (
+                        "Math Symbols".to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::MATHEMATICAL_OPERATORS,
+                            ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
+                            ub::MATHEMATICAL_ALPHANUMERIC_SYMBOLS,
+                            ub::MISCELLANEOUS_MATHEMATICAL_SYMBOLS_A,
+                            ub::MISCELLANEOUS_MATHEMATICAL_SYMBOLS_B,
+                        ])),
+                    ),
+                    (
+                        "Parentheses".to_string(),
+                        UnicodeCategory::Collection(UnicodeCollection(
+                            vec![
+                                '\u{0028}', '\u{0029}', '\u{005B}', '\u{005D}', '\u{007B}',
+                                '\u{007D}', '\u{0F3A}', '\u{0F3B}', '\u{0F3C}', '\u{0F3D}',
+                                '\u{169B}', '\u{169C}', '\u{2045}', '\u{2046}', '\u{207D}',
+                                '\u{207E}', '\u{208D}', '\u{208E}', '\u{2308}', '\u{2309}',
+                                '\u{230A}', '\u{230B}', '\u{2329}', '\u{232A}', '\u{2768}',
+                                '\u{2769}', '\u{276A}', '\u{276B}', '\u{276C}', '\u{276D}',
+                                '\u{276E}', '\u{276F}', '\u{2770}', '\u{2771}', '\u{2772}',
+                                '\u{2773}', '\u{2774}', '\u{2775}', '\u{27C5}', '\u{27C6}',
+                                '\u{27E6}', '\u{27E7}', '\u{27E8}', '\u{27E9}', '\u{27EA}',
+                                '\u{27EB}', '\u{27EC}', '\u{27ED}', '\u{27EE}', '\u{27EF}',
+                                '\u{2983}', '\u{2984}', '\u{2985}', '\u{2986}', '\u{2987}',
+                                '\u{2988}', '\u{2989}', '\u{298A}', '\u{298B}', '\u{298C}',
+                                '\u{298D}', '\u{298E}', '\u{298F}', '\u{2990}', '\u{2991}',
+                                '\u{2992}', '\u{2993}', '\u{2994}', '\u{2995}', '\u{2996}',
+                                '\u{2997}', '\u{2998}', '\u{29D8}', '\u{29D9}', '\u{29DA}',
+                                '\u{29DB}', '\u{29FC}', '\u{29FD}', '\u{2E22}', '\u{2E23}',
+                                '\u{2E24}', '\u{2E25}', '\u{2E26}', '\u{2E27}', '\u{2E28}',
+                                '\u{2E29}', '\u{2E55}', '\u{2E56}', '\u{2E57}', '\u{2E58}',
+                                '\u{2E59}', '\u{2E5A}', '\u{2E5B}', '\u{2E5C}', '\u{3008}',
+                                '\u{3009}', '\u{300A}', '\u{300B}', '\u{300C}', '\u{300D}',
+                                '\u{300E}', '\u{300F}', '\u{3010}', '\u{3011}', '\u{3014}',
+                                '\u{3015}', '\u{3016}', '\u{3017}', '\u{3018}', '\u{3019}',
+                                '\u{301A}', '\u{301B}', '\u{FE59}', '\u{FE5A}', '\u{FE5B}',
+                                '\u{FE5C}', '\u{FE5D}', '\u{FE5E}', '\u{FF08}', '\u{FF09}',
+                                '\u{FF3B}', '\u{FF3D}', '\u{FF5B}', '\u{FF5D}', '\u{FF5F}',
+                                '\u{FF60}', '\u{FF62}', '\u{FF63}',
+                            ]
+                            .iter()
+                            .copied()
+                            .collect::<HashSet<_>>(),
+                        )),
+                    ),
+                    (
+                        "Pictographs".to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::ALCHEMICAL_SYMBOLS,
+                            ub::ANCIENT_SYMBOLS,
+                            ub::MISCELLANEOUS_SYMBOLS,
+                            ub::MISCELLANEOUS_SYMBOLS_AND_ARROWS,
+                            ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
+                            ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
+                            ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                            ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                            ub::TRANSPORT_AND_MAP_SYMBOLS,
+                        ])),
+                    ),
+                    (
+                        "Punctuation".to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::GENERAL_PUNCTUATION,
+                            ub::SUPPLEMENTAL_PUNCTUATION,
+                        ])),
+                    ),
+                    (
+                        ub::DINGBATS.name().to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::DINGBATS,
+                            ub::ORNAMENTAL_DINGBATS,
+                        ])),
+                    ),
+                    (
+                        ub::GEOMETRIC_SHAPES.name().to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::GEOMETRIC_SHAPES,
+                            ub::GEOMETRIC_SHAPES_EXTENDED,
+                        ])),
+                    ),
+                    (
+                        ub::MUSICAL_SYMBOLS.name().to_string(),
+                        UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
+                    ),
+                    (
+                        "Tabletop Symbols".to_string(),
+                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                            ub::MAHJONG_TILES,
+                            ub::DOMINO_TILES,
+                            ub::PLAYING_CARDS,
+                            ub::CHESS_SYMBOLS,
+                        ])),
+                    ),
+                ];
+                /*
+                custom.append(
+                    &mut ub::all::ALL
                         .iter()
-                        .copied()
-                        .collect::<HashSet<_>>(),
-                    )),
-                ),
-                (
-                    "Pictographs".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
-                        ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
-                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                    ])),
-                ),
-                (
-                    "Punctuation".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::GENERAL_PUNCTUATION,
-                        ub::SUPPLEMENTAL_PUNCTUATION,
-                    ])),
-                ),
-                (
-                    ub::DINGBATS.name().to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::DINGBATS,
-                        ub::ORNAMENTAL_DINGBATS,
-                    ])),
-                ),
-                (
-                    ub::GEOMETRIC_SHAPES.name().to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::GEOMETRIC_SHAPES,
-                        ub::GEOMETRIC_SHAPES_EXTENDED,
-                    ])),
-                ),
-                (
-                    ub::MUSICAL_SYMBOLS.name().to_string(),
-                    UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
-                ),
-                (
-                    "Boargame Symbols".to_string(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MAHJONG_TILES,
-                        ub::DOMINO_TILES,
-                        ub::PLAYING_CARDS,
-                        ub::CHESS_SYMBOLS,
-                    ])),
-                ),
-            ],
+                        .map(|&block| (block.name().to_string(), UnicodeCategory::Block(*block)))
+                        .collect::<Vec<_>>(),
+                );*/
+                custom
+            },
             full_glyph_cache: Default::default(),
-            showed_glyph_cache: Default::default(),
+            shown_glyph_cache: Default::default(),
 
             pixels_per_point: Default::default(),
             glyph_scale: GlyphScale::Medium,
             stay_on_top: false,
+            show_prefs: false,
         }
     }
 }
@@ -284,27 +396,18 @@ impl GlyphanaApp {
         cc.egui_ctx.set_fonts(Self::fonts());
 
         // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
         let mut glyphana = if let Some(storage) = cc.storage {
-            let mut glyphana: Self =
-                eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            glyphana.pixels_per_point = cc.egui_ctx.pixels_per_point();
-            glyphana
+            eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
-            Self {
-                pixels_per_point: cc.egui_ctx.pixels_per_point(),
-                ..Default::default()
-            }
+            Self::default()
         };
+
+        glyphana.pixels_per_point = cc.egui_ctx.pixels_per_point();
 
         glyphana.default_font_id = egui::FontId::new(
             glyphana.glyph_scale.into(),
             egui::FontFamily::Name(NOTO_SANS.into()),
         );
-
-        if !glyphana.ui_search_text.is_empty() {
-            glyphana.selected_category = 2;
-        }
 
         glyphana
     }
@@ -401,6 +504,8 @@ impl GlyphanaApp {
 
         fonts
     }
+
+    fn settings_ui(&mut self, ui: &mut egui::Ui) {}
 }
 
 impl eframe::App for GlyphanaApp {
@@ -411,7 +516,26 @@ impl eframe::App for GlyphanaApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &eframe::egui::Context, frame: &mut eframe::Frame) {
-        //self.update_search_text_and_showed_glyph_cache();
+        //println!("{:?}", self.categories[1].1);
+
+        // Fill character caches on first run.
+        if self.full_glyph_cache.is_empty() {
+            self.full_glyph_cache = available_characters(&ctx, self.default_font_id.family.clone());
+            self.update_search_text_and_shown_glyph_cache();
+        }
+
+        let mut show_prefs = self.show_prefs;
+
+        egui::Window::new("🔧 Preferences")
+            .open(&mut show_prefs)
+            .vscroll(true)
+            .show(ctx, |ui| {
+                self.settings_ui(ui);
+            });
+
+        self.show_prefs = show_prefs;
+
+        //
 
         /*if let Ok(event) = tray_icon::TrayEvent::receiver().try_recv() {
             info!("tray event: {event:?}");
@@ -444,7 +568,7 @@ impl eframe::App for GlyphanaApp {
 
                     ui.separator();*/
 
-                    ui.add_enabled_ui(false, |ui| ui.button("Glyph Size"));
+                    ui.add_enabled_ui(false, |ui| ui.button("🗚 Glyph Size"));
 
                     ui.vertical(|ui| {
                         ui.radio_value(&mut self.glyph_scale, GlyphScale::Small, "Small");
@@ -456,7 +580,7 @@ impl eframe::App for GlyphanaApp {
 
                     ui.separator();
 
-                    if ui.button("Clear Recently Used").clicked() {
+                    if ui.button("🗑 Clear Recently Used").clicked() {
                         self.recently_used.clear();
                     }
 
@@ -464,9 +588,13 @@ impl eframe::App for GlyphanaApp {
 
                     ui.add_enabled_ui(false, |ui| ui.button("Export Collection…"));
 
+                    if ui.button("⚙ Preferences…").clicked() {
+                        self.show_prefs = true;
+                    }
+
                     ui.separator();
 
-                    if ui.button("Quit").clicked() {
+                    if ui.button("🗙 Quit").clicked() {
                         frame.close();
                     }
                 });
@@ -479,14 +607,7 @@ impl eframe::App for GlyphanaApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(format!("{}", super::CANCELLATION)).clicked() {
                         self.ui_search_text.clear();
-                        self.update_search_text_and_showed_glyph_cache();
-                    }
-
-                    // Fill character chache.
-                    if self.full_glyph_cache.is_empty() {
-                        self.full_glyph_cache =
-                            available_characters(ui, self.default_font_id.family.clone());
-                        self.showed_glyph_cache = self.full_glyph_cache.clone();
+                        self.update_search_text_and_shown_glyph_cache();
                     }
 
                     if ui
@@ -497,7 +618,8 @@ impl eframe::App for GlyphanaApp {
                         )
                         .changed()
                     {
-                        self.update_search_text_and_showed_glyph_cache();
+                        self.selected_category = 2;
+                        self.update_search_text_and_shown_glyph_cache();
                     }
                     //self.search_text = decancer::cure(&self.ui_search_text).into_str();
 
@@ -523,7 +645,7 @@ impl eframe::App for GlyphanaApp {
                         .response
                         .changed()
                     {
-                        self.update_search_text_and_showed_glyph_cache();
+                        self.update_search_text_and_shown_glyph_cache();
                     }
                 });
             });
@@ -531,44 +653,78 @@ impl eframe::App for GlyphanaApp {
 
         egui::SidePanel::left("categories").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                /*egui::Grid::new("custom_categories")
-                .num_columns(1)
-                //.spacing([40.0, 4.0])
-                .striped(true)
-                .show(ui, |ui| {*/
-                ui.selectable_value(&mut self.selected_category, 0, "Recently Used");
-                // ui.end_row();
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    /*egui::Grid::new("custom_categories")
+                    .num_columns(1)
+                    //.spacing([40.0, 4.0])
+                    .striped(true)
+                    .show(ui, |ui| {*/
+                    if ui
+                        .selectable_value(&mut self.selected_category, 0, "Recently Used")
+                        .changed()
+                    {
+                        self.update_search_text_and_shown_glyph_cache();
+                    }
+                    // ui.end_row();
 
-                ui.selectable_value(&mut self.selected_category, 1, "Collection");
-                // ui.end_row();
+                    if ui
+                        .selectable_value(&mut self.selected_category, 1, "Collection")
+                        .changed()
+                    {
+                        self.update_search_text_and_shown_glyph_cache();
+                    }
+                    // ui.end_row();
 
-                ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
-                    ui.selectable_value(&mut self.selected_category, 2, "Search")
+                    if ui
+                        .add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
+                            ui.selectable_value(&mut self.selected_category, 2, "Search")
+                        })
+                        .changed()
+                    {
+                        self.update_search_text_and_shown_glyph_cache();
+                    }
+                    //   ui.end_row();
+                    // });
+
+                    ui.separator();
+
+                    /*egui::Grid::new("categories")
+                    .num_columns(1)
+                    .striped(true)
+                    .show(ui, |ui| {*/
+                    let categories = self.categories.clone();
+                    for (i, category) in &mut categories.iter().enumerate() {
+                        if ui
+                            .selectable_value(
+                                &mut self.selected_category,
+                                i + CAT_START,
+                                &category.0,
+                            )
+                            .changed()
+                        {
+                            self.update_search_text_and_shown_glyph_cache();
+                        }
+
+                        //ui.end_row();
+                    }
                 });
-                //   ui.end_row();
-                // });
-
-                ui.separator();
-
-                /*egui::Grid::new("categories")
-                .num_columns(1)
-                .striped(true)
-                .show(ui, |ui| {*/
-                for (i, category) in &mut self.categories.iter().enumerate() {
-                    ui.selectable_value(&mut self.selected_category, i + CAT_START, &category.0);
-                    ui.end_row();
-                }
-                //});
             });
         });
 
+        /*
         match self.selected_category {
-            2 => self.update_search_text_and_showed_glyph_cache(),
+            2 => self.update_search_text_and_shown_glyph_cache(),
             _ => {
                 self.search_text.clear();
-                self.showed_glyph_cache = self.full_glyph_cache.clone();
-            } //self.update_search_text_and_showed_glyph_cache();
-        }
+                self.shown_glyph_cache = self.full_glyph_cache.clone();
+            } //self.update_search_text_and_shown_glyph_cache();
+        }*/
+
+        /*
+        if 2 != self.selected_category {
+            self.search_text.clear();
+            self.shown_glyph_cache = self.full_glyph_cache.clone();
+        }*/
 
         egui::SidePanel::right("character_preview").show(ctx, |ui| {
             //egui::ScrollArea::vertical().show(ui, |ui| {
@@ -781,71 +937,46 @@ impl eframe::App for GlyphanaApp {
                     //info!("ã == a is {}", focaccia::unicode_full_case_eq("a", "ã"));
 
                     let recently_used = self.recently_used.clone();
-                    self.showed_glyph_cache
-                        .iter()
-                        // Filter by category.
-                        .filter(|(&chr, _)| {
-                            !self.search_text.is_empty()
-                                || match self.selected_category {
-                                    0 => recently_used.contains(&chr),
-                                    1 => self.collection.contains(&chr),
-                                    2 => true,
-                                    _ => self.categories[self.selected_category - CAT_START]
-                                        .1
-                                        .contains(chr),
-                                }
+                    self.shown_glyph_cache.iter().for_each(|(&chr, name)| {
+                        let button = egui::Button::new(
+                            egui::RichText::new(chr.to_string()).font(self.default_font_id.clone()),
+                        )
+                        .frame(true)
+                        .min_size(egui::Vec2::splat(self.default_font_id.size * 2.));
 
-                            // If no category is selected display all glyphs in the font
-                            /*||
-                            self
-                                .categories
-                                .iter()
-                                .fold(true, |none_selected, cat| none_selected && !cat.2)*/
-                        })
-                        .for_each(|(&chr, name)| {
-                            let button = egui::Button::new(
+                        let tooltip_ui = |ui: &mut egui::Ui| {
+                            ui.label(
                                 egui::RichText::new(chr.to_string())
                                     .font(self.default_font_id.clone()),
-                            )
-                            .frame(true)
-                            .min_size(egui::Vec2::splat(self.default_font_id.size * 2.));
+                            );
+                            ui.label(format!(
+                                "{}\nU+{:X}\n\nDouble-click to copy 📋",
+                                capitalize(name),
+                                chr as u32
+                            ));
+                        };
 
-                            let tooltip_ui = |ui: &mut egui::Ui| {
-                                ui.label(
-                                    egui::RichText::new(chr.to_string())
-                                        .font(self.default_font_id.clone()),
-                                );
-                                ui.label(format!(
-                                    "{}\nU+{:X}\n\nDouble-click to copy 📋",
-                                    capitalize(name),
-                                    chr as u32
-                                ));
-                            };
+                        let hover_button = ui
+                            .add_sized(egui::Vec2::splat(self.default_font_id.size * 2.), button)
+                            .on_hover_ui(tooltip_ui);
 
-                            let hover_button = ui
-                                .add_sized(
-                                    egui::Vec2::splat(self.default_font_id.size * 2.),
-                                    button,
-                                )
-                                .on_hover_ui(tooltip_ui);
+                        if hover_button.double_clicked() {
+                            // Send to clipboard.
+                            ui.output_mut(|o| o.copied_text = chr.to_string());
 
-                            if hover_button.double_clicked() {
-                                // Send to clipboard.
-                                ui.output_mut(|o| o.copied_text = chr.to_string());
-
-                                /*use enigo::KeyboardControllable;
-                                let mut enigo = enigo::Enigo::new();
-                                let alt_tab = "{+ALT}{TAB}{-ALT}".to_string();
-                                enigo.key_sequence_parse(&(alt_tab.clone() + &chr.to_string() + &alt_tab))
-                                */
-                            } else if hover_button.clicked() {
-                                self.selected_char = chr;
-                                self.recently_used.push_back(chr);
-                                if self.recently_used_max_len <= recently_used.len() {
-                                    self.recently_used.pop_front();
-                                }
+                            /*use enigo::KeyboardControllable;
+                            let mut enigo = enigo::Enigo::new();
+                            let alt_tab = "{+ALT}{TAB}{-ALT}".to_string();
+                            enigo.key_sequence_parse(&(alt_tab.clone() + &chr.to_string() + &alt_tab))
+                            */
+                        } else if hover_button.clicked() {
+                            self.selected_char = chr;
+                            self.recently_used.push_back(chr);
+                            if self.recently_used_max_len <= recently_used.len() {
+                                self.recently_used.pop_front();
                             }
-                        });
+                        }
+                    });
                 });
             });
         });
@@ -863,35 +994,33 @@ impl eframe::App for GlyphanaApp {
 
 // .auto_shrink([false;2])
 impl GlyphanaApp {
-    fn update_search_text_and_showed_glyph_cache(&mut self) {
-        self.search_text = self.ui_search_text.clone();
-        self.split_search_text = self
-            .search_text
-            .split(' ')
-            .filter_map(|s| {
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_string())
-                }
-            })
-            .collect();
-        self.split_search_text_lower = self
-            .split_search_text
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-
+    fn update_search_text_and_shown_glyph_cache(&mut self) {
         // Update character cache.
-        if self.search_text.is_empty() {
-            // Use category filtering.
-            self.showed_glyph_cache = self.full_glyph_cache.clone();
-            if 2 == self.selected_category {
-                self.selected_category = 0;
-            }
-        } else {
+        if 2 == self.selected_category {
+            //info!("Updating cache");
+            self.search_text = self.ui_search_text.clone();
+
+            self.split_search_text = self
+                .search_text
+                .split(' ')
+                .filter_map(|s| {
+                    if s.is_empty() {
+                        None
+                    } else {
+                        Some(s.to_string())
+                    }
+                })
+                .collect();
+
+            self.split_search_text_lower = self
+                .split_search_text
+                .iter()
+                .map(|s| s.to_lowercase())
+                .collect();
+
             self.selected_category = 2;
-            self.showed_glyph_cache = self
+
+            self.shown_glyph_cache = self
                 .full_glyph_cache
                 .clone()
                 .into_iter()
@@ -931,6 +1060,30 @@ impl GlyphanaApp {
                         })
                 })
                 .collect()
+        } else {
+            //info!("Updating full cache for category {}!", self.selected_category);
+            self.shown_glyph_cache = self
+                .full_glyph_cache
+                .clone()
+                .into_iter()
+                // Filter by category.
+                .filter(|(chr, _)| {
+                    match self.selected_category {
+                        0 => self.recently_used.contains(&chr),
+                        1 => self.collection.contains(&chr),
+                        _ => self.categories[self.selected_category - CAT_START]
+                            .1
+                            .contains(*chr),
+                    }
+
+                    // If no category is selected display all glyphs in the font
+                    /*||
+                    self
+                        .categories
+                        .iter()
+                        .fold(true, |none_selected, cat| none_selected && !cat.2)*/
+                })
+                .collect();
         }
     }
 
@@ -1022,8 +1175,8 @@ impl GlyphanaApp {
     }
 }
 
-fn available_characters(ui: &egui::Ui, family: egui::FontFamily) -> BTreeMap<char, String> {
-    ui.fonts(|f| {
+fn available_characters(ctx: &egui::Context, family: egui::FontFamily) -> BTreeMap<char, String> {
+    ctx.fonts(|f| {
         f.lock()
             .fonts
             .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
