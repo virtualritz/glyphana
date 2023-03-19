@@ -21,7 +21,7 @@ pub const COG_WHEEL: char = '⚙';
 pub const HAMBURGER: char = '☰';
 pub const MAGNIFIER: char = '🔍';
 pub const NAME_BADGE: char = '📛';
-pub const UPPER_LOWER_CASE: char = '🗛';
+pub const LOWER_UPPER_CASE: char = '🗛';
 pub const PUSH_PIN: char = '📌';
 pub const SUBSET: char = '⊂';
 
@@ -38,6 +38,9 @@ flate!(pub static NOTO_COLOR_EMOJI_FONT: [u8] from "assets/NotoColorEmoji-Regula
 
 pub const NOTO_EMOJI: &str = "noto-emoji";
 flate!(pub static NOTO_EMOJI_FONT: [u8] from "assets/NotoEmoji-Regular.ttf");
+
+pub const EMOJI_ICON: &str = "emoji-icon";
+flate!(pub static EMOJI_ICON_FONT: [u8] from "assets/emoji-icon-font.ttf");
 
 pub const NOTO_SYMBOLS: &str = "noto-symbols";
 flate!(pub static NOTO_SYMBOLS_FONT: [u8] from "assets/NotoSansSymbols-Regular.ttf");

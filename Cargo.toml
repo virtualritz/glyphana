@@ -46,7 +46,7 @@ egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd
 eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
 unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
 unicode-blocks = { git = "https://github.com/virtualritz/unicode-blocks.git", branch = "master" }
-rusttype = { git = "https://gitlab.redox-os.org/virtualritz/rusttype.git", branch = "master" }
+rusttype = { git = "https://gitlab.redox-os.org/redox-os/rusttype.git", branch = "master" }
 #decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
 #tray-icon = { git = "https://github.com/tauri-apps/tray-icon.git", branch = "dev" }
 #enigo = { git = "https://github.com/enigo-rs/enigo.git", branch = "master" }

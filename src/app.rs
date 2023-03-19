@@ -458,6 +458,14 @@ impl GlyphanaApp {
             }),
         );
         fonts.font_data.insert(
+            EMOJI_ICON.to_owned(),
+            egui::FontData::from_static(&EMOJI_ICON_FONT).tweak(egui::FontTweak {
+                scale: 0.75,           // make it smaller
+                y_offset_factor: 0.45, // move it down
+                ..Default::default()
+            }),
+        );
+        fonts.font_data.insert(
             NOTO_SYMBOLS.to_owned(),
             egui::FontData::from_static(&NOTO_SYMBOLS_FONT).tweak(egui::FontTweak {
                 scale: 0.9,             // make it smaller
@@ -495,6 +503,7 @@ impl GlyphanaApp {
                 NOTO_SANS.to_owned(),
                 NOTO_SANS_MATH.to_owned(),
                 NOTO_EMOJI.to_owned(),
+                EMOJI_ICON.to_owned(),
                 NOTO_SYMBOLS.to_owned(),
                 NOTO_SYMBOLS2.to_owned(),
                 //NOTO_SIGN_WRITING.to_owned(),
@@ -526,7 +535,7 @@ impl eframe::App for GlyphanaApp {
 
         let mut show_prefs = self.show_prefs;
 
-        egui::Window::new("🔧 Preferences")
+        egui::Window::new("⚙ Preferences")
             .open(&mut show_prefs)
             .vscroll(true)
             .show(ctx, |ui| {
@@ -558,9 +567,12 @@ impl eframe::App for GlyphanaApp {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button(format!("{}", super::HAMBURGER), |ui| {
                     #[cfg(debug_assertions)]
-                    if ui.button("Reset App State").clicked() {
+                    if ui.button("⟲ Factory Reset App State").clicked() {
                         *self = Self::default();
                     }
+
+                    #[cfg(debug_assertions)]
+                    ui.separator();
 
                     /*if ui.button("Customize List…").clicked() {
                         todo!()
@@ -568,7 +580,7 @@ impl eframe::App for GlyphanaApp {
 
                     ui.separator();*/
 
-                    ui.add_enabled_ui(false, |ui| ui.button("🗚 Glyph Size"));
+                    ui.add_enabled_ui(false, |ui| ui.button("🗛 Glyph Size"));
 
                     ui.vertical(|ui| {
                         ui.radio_value(&mut self.glyph_scale, GlyphScale::Small, "Small");
@@ -629,7 +641,7 @@ impl eframe::App for GlyphanaApp {
 
                     ui.toggle_value(
                         &mut self.case_sensitive,
-                        format!("{}", super::UPPER_LOWER_CASE),
+                        format!("{}", super::LOWER_UPPER_CASE),
                     )
                     .on_hover_ui(|ui| {
                         ui.label("Match Case");
@@ -1120,6 +1132,8 @@ impl GlyphanaApp {
         let _bottom = rect.max.y - offset;
 
         let font = rusttype::Font::try_from_bytes(&NOTO_SANS_FONT).unwrap();
+
+        //read
 
         let v_metrics = font.v_metrics(rusttype::Scale::uniform(glyph_scale));
 
