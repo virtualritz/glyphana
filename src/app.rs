@@ -1,7 +1,7 @@
 use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
 use finl_unicode::categories::CharacterCategories;
-use log::info;
+//use log::info;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use unicode_blocks as ub;
@@ -514,7 +514,7 @@ impl GlyphanaApp {
         fonts
     }
 
-    fn settings_ui(&mut self, ui: &mut egui::Ui) {}
+    fn settings_ui(&mut self, _ui: &mut egui::Ui) {}
 }
 
 impl eframe::App for GlyphanaApp {
@@ -529,7 +529,7 @@ impl eframe::App for GlyphanaApp {
 
         // Fill character caches on first run.
         if self.full_glyph_cache.is_empty() {
-            self.full_glyph_cache = available_characters(&ctx, self.default_font_id.family.clone());
+            self.full_glyph_cache = available_characters(ctx, self.default_font_id.family.clone());
             self.update_search_text_and_shown_glyph_cache();
         }
 
@@ -644,6 +644,7 @@ impl eframe::App for GlyphanaApp {
                         format!("{}", super::LOWER_UPPER_CASE),
                     )
                     .on_hover_ui(|ui| {
+                        self.selected_category = 2;
                         ui.label("Match Case");
                     });
 
@@ -657,6 +658,7 @@ impl eframe::App for GlyphanaApp {
                         .response
                         .changed()
                     {
+                        self.selected_category = 2;
                         self.update_search_text_and_shown_glyph_cache();
                     }
                 });
@@ -1081,8 +1083,8 @@ impl GlyphanaApp {
                 // Filter by category.
                 .filter(|(chr, _)| {
                     match self.selected_category {
-                        0 => self.recently_used.contains(&chr),
-                        1 => self.collection.contains(&chr),
+                        0 => self.recently_used.contains(chr),
+                        1 => self.collection.contains(chr),
                         _ => self.categories[self.selected_category - CAT_START]
                             .1
                             .contains(*chr),
