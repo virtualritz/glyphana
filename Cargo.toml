@@ -23,7 +23,7 @@ eframe = { version = "0.21", default-features = false, features = [
 egui = "0.21"
 encode_unicode = "1.0.0"
 #enigo = "0.0.14"
-enum_dispatch = "0.3.11"
+enum_dispatch = "0.3.12"
 finl_unicode = "1.2.0"
 glyph-names = "0.2.0"
 #gtk = "0.16.0"
