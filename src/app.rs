@@ -930,7 +930,7 @@ impl GlyphanaApp {
                         || self
                             .split_search_text_lower
                             .iter()
-                            .any(|text| glyph_names::glyph_name(chr as _).contains(text))
+                            .any(|text| glyph_names::glyph_name(chr as _).map(|name| name.contains(text)).unwrap_or(false))
                         || self.search_text.chars().any(|c| {
                             //cured_chr.chars().next().unwrap() == c ||
                             unicode_skeleton::confusable([chr].into_iter(), [c].into_iter())

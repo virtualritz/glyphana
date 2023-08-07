@@ -9,27 +9,27 @@ license = "(MIT OR Apache-2.0 OR BSD-3-Clause) AND OFL-1.1"
 
 [dependencies]
 ahash = "0.8.3"
-bytemuck = "1.13.0"
-eframe = { version = "0.21.3", default-features = false, features = [
+bytemuck = "1.13.1"
+eframe = { version = "0.22.0", default-features = false, features = [
     #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
     #"wgpu"           # Alternative backend if "glow" gives your trouble.
 ] }
-egui = "0.21.0"
-egui_dnd = "0.3.0"
+egui = "0.22.0"
+egui_dnd = "0.4.0"
 encode_unicode = "1.0.0"
 #enigo = "0.0.14"
-enum_dispatch = "0.3.11"
+enum_dispatch = "0.3.12"
 glyph-names = "0.2.0"
-image = { version = "0.24.5", default-features = false, features = ["png"] }
+image = { version = "0.24.6", default-features = false, features = ["png"] }
 include-flate = "0.2.0"
 rusttype = "0.9.3"
 serde = { version = "1", features = ["derive"] }
 textwrap = "0.16.0"
 #tray-icon = "0.4.3"
-unicode-blocks = "0.1.5"
+unicode-blocks = "0.1.8"
 unicode-case-mapping = "0.5.0"
 unicode_names2 = "0.6.0"
 unicode_skeleton = "0.1.1"
