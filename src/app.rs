@@ -445,39 +445,39 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_SANS_MATH.to_owned(),
             egui::FontData::from_static(&NOTO_SANS_MATH_FONT).tweak(egui::FontTweak {
-                y_offset_factor: -0.27, // move it up
+                //y_offset_factor: 0.14, // move it up
                 ..Default::default()
             }),
         );
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
             egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
-                scale: 0.73,           // make it smaller
-                y_offset_factor: 0.15, // move it down
+                scale: 0.73, // make it smaller
+                //y_offset_factor: 0.15, // move it down
                 ..Default::default()
             }),
         );
         fonts.font_data.insert(
             EMOJI_ICON.to_owned(),
             egui::FontData::from_static(&EMOJI_ICON_FONT).tweak(egui::FontTweak {
-                scale: 0.75,           // make it smaller
-                y_offset_factor: 0.45, // move it down
+                scale: 0.75, // make it smaller
+                //y_offset_factor: 0.45, // move it down
                 ..Default::default()
             }),
         );
         fonts.font_data.insert(
             NOTO_SYMBOLS.to_owned(),
             egui::FontData::from_static(&NOTO_SYMBOLS_FONT).tweak(egui::FontTweak {
-                scale: 0.9,             // make it smaller
-                y_offset_factor: -0.43, // move it up
+                scale: 0.75, // make it smaller
+                //y_offset_factor: 0.2, // move it up
                 ..Default::default()
             }),
         );
         fonts.font_data.insert(
             NOTO_SYMBOLS2.to_owned(),
             egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).tweak(egui::FontTweak {
-                scale: 0.8,              // make it smaller
-                y_offset_factor: -0.243, // move it up
+                scale: 0.8, // make it smaller
+                //y_offset_factor: -0.243, // move it up
                 ..Default::default()
             }),
         );
@@ -492,7 +492,7 @@ impl GlyphanaApp {
         fonts.font_data.insert(
             NOTO_MUSIC.to_owned(),
             egui::FontData::from_static(&NOTO_MUSIC_FONT).tweak(egui::FontTweak {
-                scale: 0.7, // make it smaller
+                //scale: 0.7, // make it smaller
                 ..Default::default()
             }),
         );
@@ -765,7 +765,7 @@ impl eframe::App for GlyphanaApp {
             //let painter =
             //Painter::new(ctx.clone(), ui.layer_id(), ui.available_rect_before_wrap());
 
-            self.paint_glyph(scale * 0.8, ui, response, painter);
+            self.paint_glyph(scale, ui, response, painter);
 
             ui.with_layout(
                 egui::Layout::top_down_justified(egui::Align::Center),
@@ -1064,10 +1064,9 @@ impl GlyphanaApp {
                             .iter()
                             .any(|text| name.contains(text)))
                         || (!self.search_name && self.search_text.contains(&chr.to_string()))
-                        || self
-                            .split_search_text_lower
-                            .iter()
-                            .any(|text| glyph_names::glyph_name(chr as _).contains(text))
+                        || self.split_search_text_lower.iter().any(|text| {
+                            glyph_names::glyph_name(chr as _).is_some_and(|t| t.contains(text))
+                        })
                         || self.search_text.chars().any(|c| {
                             //cured_chr.chars().next().unwrap() == c ||
                             unicode_skeleton::confusable([chr].into_iter(), [c].into_iter())
@@ -1125,13 +1124,14 @@ impl GlyphanaApp {
 
         let glyph_scale = scale * 0.8;
 
-        let offset = scale * 0.12;
+        // We add a 12% frame around the paint area.
+        let offset = glyph_scale * 0.12;
 
         let left = rect.min.x + offset;
         let top = rect.min.y + offset;
 
         let right = rect.max.x - offset;
-        let _bottom = rect.max.y - offset;
+        let bottom = rect.max.y - offset;
 
         let font = rusttype::Font::try_from_bytes(&NOTO_SANS_FONT).unwrap();
 
@@ -1149,20 +1149,20 @@ impl GlyphanaApp {
         };
 
         let mut stroke = visuals.widgets.noninteractive.fg_stroke;
-        let info_text_color = stroke.color;
 
         stroke.color = stroke
             .color
-            .linear_multiply(info_text_color.r() as f32 / 255.0);
+            .linear_multiply(stroke.color.r() as f32 / 255.0);
 
         painter.text(
-            egui::Pos2::new(center.x, top + scale + glyph_scale * 0.023),
-            egui::Align2::CENTER_BOTTOM,
+            egui::Pos2::new(center.x, top),
+            egui::Align2::CENTER_TOP,
             self.selected_char,
             egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
             glyph_color,
         );
 
+        // Ascent
         painter.line_segment(
             [
                 egui::Pos2::new(left, top + glyph_scale - v_metrics.ascent),
@@ -1171,6 +1171,7 @@ impl GlyphanaApp {
             stroke,
         );
 
+        // Baseline
         painter.line_segment(
             [
                 egui::Pos2::new(left, top + glyph_scale),
@@ -1179,6 +1180,7 @@ impl GlyphanaApp {
             stroke,
         );
 
+        // Descent
         painter.line_segment(
             [
                 egui::Pos2::new(left, top + glyph_scale - v_metrics.descent),
