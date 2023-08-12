@@ -1,7 +1,7 @@
 use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
 //use log::info;
-use egui_dnd::{utils::shift_vec, DragDropItem, DragDropUi};
+use egui_dnd::{dnd, DragDropItem, DragDropUi};
 use serde::{Deserialize, Serialize};
 use std::{hash::{Hasher, Hash}, collections::{BTreeMap, VecDeque}};
 use unicode_blocks as ub;
@@ -586,21 +586,30 @@ impl eframe::App for GlyphanaApp {
                     //ui.end_row();
                 }*/
 
-                let response = self
+                dnd(ui, "dnd_example").show_vec(&mut self.categories, |ui, item, handle, state| {
+                    handle
+                        .show_drag_cursor_on_hover(false)
+                        .ui(ui, |ui| {ui.selectable_value(&mut self.selected_category, item.id(), &item.name); });
+                });
+
+
+                /*let response = self
                     .categories_ui
-                    .ui::<Category>(ui, self.categories.iter_mut(), |item, ui, handle| {
-                        ui.horizontal(|ui| {
+                    .ui::<Category>(ui, self.categories.iter(), |item, ui, handle, _pressure| {
+                        /*ui.horizontal(|ui| {
                         // Anything in the handle can be used to drag the item
                         handle.ui(ui, item, |ui| {
                             ui.label("☰");
                         });
-                        ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
+
+                    });*/
+                    ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
                     });
 
-                    });
+                //response.update_vec(&mut self.categories);
                 if let Some(response) = response.completed {
                     shift_vec(response.from, response.to, &mut self.categories);
-                }
+                }*/
                 //});
             });
         });
