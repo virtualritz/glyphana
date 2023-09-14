@@ -1,11 +1,14 @@
 use ahash::AHashSet as HashSet;
 use enum_dispatch::enum_dispatch;
 //use log::info;
-use egui_dnd::{dnd, DragDropItem, DragDropUi};
-use serde::{Deserialize, Serialize};
-use std::{hash::{Hasher, Hash}, collections::{BTreeMap, VecDeque}};
-use unicode_blocks as ub;
+use egui_dnd::{dnd, DragDropItem};
 use include_flate::lazy_static;
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    hash::{Hash, Hasher},
+};
+use unicode_blocks as ub;
 
 use crate::*;
 
@@ -52,8 +55,6 @@ pub struct GlyphanaApp {
 
     categories: Vec<Category>,
     #[serde(skip)]
-    categories_ui: DragDropUi,
-    #[serde(skip)]
     full_glyph_cache: BTreeMap<char, String>,
     #[serde(skip)]
     showed_glyph_cache: BTreeMap<char, String>,
@@ -63,10 +64,10 @@ pub struct GlyphanaApp {
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
-struct Category{
+struct Category {
     name: String,
     #[serde(skip)]
-    unicode_category: UnicodeCategory
+    unicode_category: UnicodeCategory,
 }
 
 impl Category {
@@ -83,7 +84,6 @@ impl Hash for Category {
         self.name.hash(state)
     }
 }
-
 
 #[enum_dispatch]
 trait CharacterInspector {
@@ -178,30 +178,25 @@ impl Default for GlyphanaApp {
             recently_used_max_len: 1000,
             collection: Default::default(),
             selected_category: *RECENTLY_USED_ID,
-            categories_ui: Default::default(),
             categories: vec![
-
-                    Category::new(
-                        "Emoji",
-                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                            ub::EMOTICONS,
-                            ub::TRANSPORT_AND_MAP_SYMBOLS,
-                            ub::ALCHEMICAL_SYMBOLS,
-                            ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                            ub::SYMBOLS_FOR_LEGACY_COMPUTING,
-                        ])),
-                    ),
-
                 Category::new(
-
-                        ub::ARROWS.name(),
-                        UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                            ub::ARROWS,
-                            ub::SUPPLEMENTAL_ARROWS_A,
-                            ub::SUPPLEMENTAL_ARROWS_B,
-                            ub::SUPPLEMENTAL_ARROWS_C,
-                        ])),
-
+                    "Emoji",
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::EMOTICONS,
+                        ub::TRANSPORT_AND_MAP_SYMBOLS,
+                        ub::ALCHEMICAL_SYMBOLS,
+                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                    ])),
+                ),
+                Category::new(
+                    ub::ARROWS.name(),
+                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
+                        ub::ARROWS,
+                        ub::SUPPLEMENTAL_ARROWS_A,
+                        ub::SUPPLEMENTAL_ARROWS_B,
+                        ub::SUPPLEMENTAL_ARROWS_C,
+                    ])),
                 ),
                 Category::new(
                     ub::CURRENCY_SYMBOLS.name(),
@@ -319,7 +314,7 @@ impl Default for GlyphanaApp {
 
 impl GlyphanaApp {
     /// Called once before the first frame.
-    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new(cc: &eframe::CreationContext) -> Self {
         // This is also where you can customize the look and feel of egui using
         // `cc.egui_ctx.set_visuals` and `cc.egui_ctx.set_fonts`.
 
@@ -551,8 +546,6 @@ impl eframe::App for GlyphanaApp {
             });
         });
 
-
-
         egui::SidePanel::left("categories").show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 /*egui::Grid::new("custom_categories")
@@ -581,36 +574,16 @@ impl eframe::App for GlyphanaApp {
                 .num_columns(1)
                 .striped(true)
                 .show(ui, |ui| {*/
-               /*  for (i, category) in &mut self.categories.iter().enumerate() {
+                /*  for (i, category) in &mut self.categories.iter().enumerate() {
                     ui.selectable_value(&mut self.selected_category, i + CAT_START, &category.name);
                     //ui.end_row();
                 }*/
 
-                dnd(ui, "dnd_example").show_vec(&mut self.categories, |ui, item, handle, state| {
-                    handle
-                        .show_drag_cursor_on_hover(false)
-                        .ui(ui, |ui| {ui.selectable_value(&mut self.selected_category, item.id(), &item.name); });
-                });
-
-
-                /*let response = self
-                    .categories_ui
-                    .ui::<Category>(ui, self.categories.iter(), |item, ui, handle, _pressure| {
-                        /*ui.horizontal(|ui| {
-                        // Anything in the handle can be used to drag the item
-                        handle.ui(ui, item, |ui| {
-                            ui.label("☰");
-                        });
-
-                    });*/
-                    ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
+                dnd(ui, "dnd_example").show_vec(&mut self.categories, |ui, item, handle, _| {
+                    handle.show_drag_cursor_on_hover(false).ui(ui, |ui| {
+                        ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
                     });
-
-                //response.update_vec(&mut self.categories);
-                if let Some(response) = response.completed {
-                    shift_vec(response.from, response.to, &mut self.categories);
-                }*/
-                //});
+                });
             });
         });
 
@@ -664,7 +637,7 @@ impl eframe::App for GlyphanaApp {
                                     &title_case(
                                         &unicode_names2::name(self.selected_char)
                                             .map(|name| name.to_string().to_lowercase())
-                                            .unwrap_or_else(String::new),
+                                            .unwrap_or_default(),
                                     ),
                                     18,
                                 )
@@ -796,17 +769,20 @@ impl eframe::App for GlyphanaApp {
                         // Filter by category.
                         .filter(|(&chr, _)| {
                             !self.search_text.is_empty()
-                                ||
-                                if *RECENTLY_USED_ID == self.selected_category {
+                                || if *RECENTLY_USED_ID == self.selected_category {
                                     recently_used.contains(&chr)
                                 } else if *COLLECTION_ID == self.selected_category {
                                     self.collection.contains(&chr)
                                 } else if *SEARCH_ID == self.selected_category {
                                     true
                                 } else {
-                                    match self.categories.iter().find(|c| self.selected_category == egui::Id::new(c)) {
-                                            Some(c) => c.unicode_category.contains(chr),
-                                            None => unreachable!()
+                                    match self
+                                        .categories
+                                        .iter()
+                                        .find(|c| self.selected_category == egui::Id::new(c))
+                                    {
+                                        Some(c) => c.unicode_category.contains(chr),
+                                        None => unreachable!(),
                                     }
                                 }
 
@@ -936,10 +912,11 @@ impl GlyphanaApp {
                             .iter()
                             .any(|text| name.contains(text)))
                         || (!self.search_name && self.search_text.contains(&chr.to_string()))
-                        || self
-                            .split_search_text_lower
-                            .iter()
-                            .any(|text| glyph_names::glyph_name(chr as _).map(|name| name.contains(text)).unwrap_or(false))
+                        || self.split_search_text_lower.iter().any(|text| {
+                            glyph_names::glyph_name(chr as _)
+                                .map(|name| name.contains(text))
+                                .unwrap_or(false)
+                        })
                         || self.search_text.chars().any(|c| {
                             //cured_chr.chars().next().unwrap() == c ||
                             unicode_skeleton::confusable([chr].into_iter(), [c].into_iter())

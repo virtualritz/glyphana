@@ -17,22 +17,22 @@ eframe = { version = "0.22.0", default-features = false, features = [
     "persistence",   # Enable restoring app state when restarting the app.
     #"wgpu"           # Alternative backend if "glow" gives your trouble.
 ] }
-egui = "0.22.0"
-egui_dnd = "0.4.0"
-encode_unicode = "1.0.0"
+egui = "0.22"
+egui_dnd = "0.5"
+encode_unicode = "1.0"
 #enigo = "0.0.14"
-enum_dispatch = "0.3.12"
-glyph-names = "0.2.0"
-image = { version = "0.24.6", default-features = false, features = ["png"] }
-include-flate = "0.2.0"
-rusttype = "0.9.3"
+enum_dispatch = "0.3"
+glyph-names = "0.2"
+image = { version = "0.24", default-features = false, features = ["png"] }
+include-flate = "0.2"
+rusttype = "0.9"
 serde = { version = "1", features = ["derive"] }
-textwrap = "0.16.0"
+textwrap = "0.16"
 #tray-icon = "0.4.3"
-unicode-blocks = "0.1.8"
-unicode-case-mapping = "0.5.0"
-unicode_names2 = "0.6.0"
-unicode_skeleton = "0.1.1"
+unicode-blocks = "0.1"
+unicode-case-mapping = "0.5"
+unicode_names2 = "1.0"
+unicode_skeleton = "0.1"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -58,7 +58,6 @@ inherits = "release"
 
 [patch.crates-io]
 egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
-egui_dnd = { git = "https://github.com/lucasmerlin/egui_dnd", branch = "main" }
 eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
 unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
 #decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
