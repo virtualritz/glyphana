@@ -8,7 +8,7 @@ It is inspired by the [macOS Character Viewer](https://support.apple.com/guide/m
 which I sorely miss on Linux and Windows.
 
 ![Searching for the characters contained in 'grinning cat' as well as matching
-the term against each glyph's description](https://github.com/virtualritz/glyphana/blob/master/screenshot.png)
+the term against each glyph's description](https://raw.githubusercontent.com/virtualritz/glyphana/master/screenshot.png)
 
 ## Caveat
 
