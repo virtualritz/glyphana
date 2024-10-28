@@ -38,7 +38,7 @@ textwrap = "0.16.0"
 tracing-subscriber = "0.3"
 #tray-icon = "0.4.3"
 unicode-blocks = "0.1.8"
-unicode-case-mapping = "0.5.0"
+unicode-case-mapping = "1.0.0"
 unicode_names2 = "0.6.0"
 unicode_skeleton = "0.1.1"
 
