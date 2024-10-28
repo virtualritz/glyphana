@@ -29,7 +29,7 @@ finl_unicode = "1.2.0"
 glyph-names = "0.2.0"
 #gtk = "0.16.0"
 image = { version = "0.24.6", default-features = false, features = ["png"] }
-include-flate = "0.2.0"
+include-flate = "0.3.0"
 log = "0.4.19"
 #log = "0.4.17"
 rusttype = "0.9.3"
