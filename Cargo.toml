@@ -28,7 +28,7 @@ enum_dispatch = "0.3.12"
 finl_unicode = "1.2.0"
 glyph-names = "0.2.0"
 #gtk = "0.16.0"
-image = { version = "0.24.6", default-features = false, features = ["png"] }
+image = { version = "0.25.5", default-features = false, features = ["png"] }
 include-flate = "0.2.0"
 log = "0.4.19"
 #log = "0.4.17"
