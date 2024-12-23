@@ -12,7 +12,7 @@ repository = "https://github.com/virtualritz/glyphana/"
 
 [dependencies]
 ahash = "0.8.3"
-bytemuck = "1.13.1"
+bytemuck = "1.21.0"
 eframe = { version = "0.22", default-features = false, features = [
     #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
