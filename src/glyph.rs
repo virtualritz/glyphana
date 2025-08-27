@@ -98,26 +98,20 @@ pub fn special_char_name(chr: char) -> Option<&'static str> {
     }
 }
 
-pub fn available_characters() -> BTreeMap<char, String> {
-    // For now, return a basic set of characters
-    // AIDEV-TODO: Update this when we find the correct egui API for font ranges
-    let mut chars = BTreeMap::new();
-
-    // Add basic ASCII characters
-    for code in 32u32..127u32 {
-        if let Some(chr) = char::from_u32(code) {
-            chars.insert(chr, char_name(chr));
-        }
-    }
-
-    // Add some common Unicode ranges
-    for code in 0x0100u32..0x017F {
-        if let Some(chr) = char::from_u32(code) {
-            chars.insert(chr, char_name(chr));
-        }
-    }
-
-    chars
+pub fn available_characters(
+    ctx: &egui::Context,
+    family: egui::FontFamily,
+) -> BTreeMap<char, String> {
+    ctx.fonts(|f| {
+        f.lock()
+            .fonts
+            .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
+            .characters()
+            .iter()
+            .filter(|(chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
+            .map(|(&chr, _)| (chr, char_name(chr)))
+            .collect()
+    })
 }
 
 fn capitalize(s: &str) -> String {

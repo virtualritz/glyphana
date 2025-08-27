@@ -416,7 +416,12 @@ impl GlyphanaApp {
             );
 
             if let Some(cat_id) = category_clicked {
-                self.selected_category = cat_id;
+                // Toggle selection - if already selected, deselect (set to invalid ID)
+                if self.selected_category == cat_id {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = cat_id;
+                }
                 self.update_search_text_and_cache();
             }
 
@@ -431,7 +436,12 @@ impl GlyphanaApp {
                 .selectable_label(self.selected_category == recently_used_id(), RECENTLY_USED)
                 .clicked()
             {
-                self.selected_category = recently_used_id();
+                // Toggle selection
+                if self.selected_category == recently_used_id() {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = recently_used_id();
+                }
                 self.update_search_text_and_cache();
             }
 
@@ -439,7 +449,12 @@ impl GlyphanaApp {
                 .selectable_label(self.selected_category == collection_id(), COLLECTION)
                 .clicked()
             {
-                self.selected_category = collection_id();
+                // Toggle selection
+                if self.selected_category == collection_id() {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = collection_id();
+                }
                 self.update_search_text_and_cache();
             }
 
@@ -447,7 +462,12 @@ impl GlyphanaApp {
                 .selectable_label(self.selected_category == search_id(), SEARCH)
                 .clicked()
             {
-                self.selected_category = search_id();
+                // Toggle selection
+                if self.selected_category == search_id() {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = search_id();
+                }
                 self.update_search_text_and_cache();
             }
         });
@@ -779,7 +799,11 @@ impl GlyphanaApp {
                     .filter_map(|c| self.full_glyph_cache.get(&c).map(|n| (c, n.clone())))
                     .collect()
             } else {
-                vec![]
+                // No category selected - show all available glyphs
+                self.full_glyph_cache
+                    .iter()
+                    .map(|(&c, n)| (c, n.clone()))
+                    .collect()
             }
         }
     }
@@ -787,10 +811,8 @@ impl GlyphanaApp {
 
 // Helper methods
 impl GlyphanaApp {
-    fn update_full_glyph_cache(&mut self, _ctx: &egui::Context) {
-        // AIDEV-TODO: Update this to use proper font range detection from egui
-        // For now, use a simplified version
-        self.full_glyph_cache = available_characters();
+    fn update_full_glyph_cache(&mut self, ctx: &egui::Context) {
+        self.full_glyph_cache = available_characters(ctx, egui::FontFamily::Name(NOTO_SANS.into()));
         self.update_search_text_and_cache();
     }
 
