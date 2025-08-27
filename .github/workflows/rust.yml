@@ -1,9 +1,11 @@
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
 
 name: CI
 
 jobs:
-
   all:
     name: Check, rustfmt, clippy
     runs-on: ubuntu-latest
