@@ -38,8 +38,10 @@ pub trait CharacterInspector {
 impl CharacterInspector for ub::UnicodeBlock {
     fn characters(&self) -> Vec<char> {
         let mut chars = vec![];
-        for code_point in self.range() {
-            if let Some(c) = char::from_u32(code_point.into()) {
+        let start = self.start();
+        let end = self.end();
+        for code_point in start..=end {
+            if let Some(c) = char::from_u32(code_point) {
                 chars.push(c);
             }
         }
@@ -47,7 +49,8 @@ impl CharacterInspector for ub::UnicodeBlock {
     }
 
     fn contains(&self, c: char) -> bool {
-        self.range().contains(&(c as u32))
+        let code = c as u32;
+        code >= self.start() && code <= self.end()
     }
 }
 
@@ -204,4 +207,3 @@ pub fn create_default_categories() -> Vec<Category> {
 
     categories
 }
-

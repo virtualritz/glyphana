@@ -5,4 +5,3 @@ pub mod search;
 pub mod ui;
 
 pub use app::GlyphanaApp;
-

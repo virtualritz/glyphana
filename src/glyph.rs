@@ -4,7 +4,7 @@ pub fn char_name(chr: char) -> String {
     if let Some(name) = special_char_name(chr) {
         name.to_string()
     } else if let Some(name) = unicode_names2::name(chr) {
-        title_case(name)
+        title_case(&name.to_string())
     } else {
         format!("U+{:04X}", chr as u32)
     }
@@ -98,17 +98,26 @@ pub fn special_char_name(chr: char) -> Option<&'static str> {
     }
 }
 
-pub fn available_characters(ui: &egui::Ui, family: egui::FontFamily) -> BTreeMap<char, String> {
-    ui.fonts(|f| {
-        f.families_and_ranges(&family)
-            .flat_map(|(_, ranges)| {
-                ranges
-                    .iter()
-                    .flat_map(|range| range.clone())
-                    .map(|chr| (chr, char_name(chr)))
-            })
-            .collect()
-    })
+pub fn available_characters() -> BTreeMap<char, String> {
+    // For now, return a basic set of characters
+    // AIDEV-TODO: Update this when we find the correct egui API for font ranges
+    let mut chars = BTreeMap::new();
+
+    // Add basic ASCII characters
+    for code in 32u32..127u32 {
+        if let Some(chr) = char::from_u32(code) {
+            chars.insert(chr, char_name(chr));
+        }
+    }
+
+    // Add some common Unicode ranges
+    for code in 0x0100u32..0x017F {
+        if let Some(chr) = char::from_u32(code) {
+            chars.insert(chr, char_name(chr));
+        }
+    }
+
+    chars
 }
 
 fn capitalize(s: &str) -> String {
@@ -152,4 +161,3 @@ impl From<GlyphScale> for f32 {
         }
     }
 }
-

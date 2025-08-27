@@ -1,5 +1,4 @@
 use crate::categories::{Category, CharacterInspector};
-use crate::glyph::char_name;
 use std::collections::BTreeMap;
 use stringzilla::StringZilla;
 
@@ -71,16 +70,23 @@ impl SearchEngine {
         text: &str,
         full_cache: &BTreeMap<char, String>,
     ) -> Option<BTreeMap<char, String>> {
-        // Check for Unicode block name search
-        if let Some(block) = unicode_blocks::find_unicode_block(text) {
-            let results: BTreeMap<char, String> = full_cache
-                .iter()
-                .filter(|(chr, _)| block.range().contains(&(**chr as u32)))
-                .map(|(chr, name)| (*chr, name.clone()))
-                .collect();
+        // Check for single character's Unicode block
+        if text.chars().count() == 1 {
+            if let Some(chr) = text.chars().next() {
+                if let Some(block) = unicode_blocks::find_unicode_block(chr) {
+                    let results: BTreeMap<char, String> = full_cache
+                        .iter()
+                        .filter(|(chr, _)| {
+                            let code = **chr as u32;
+                            code >= block.start() && code <= block.end()
+                        })
+                        .map(|(chr, name)| (*chr, name.clone()))
+                        .collect();
 
-            if !results.is_empty() {
-                return Some(results);
+                    if !results.is_empty() {
+                        return Some(results);
+                    }
+                }
             }
         }
 
@@ -232,8 +238,6 @@ impl SearchEngine {
             return cache;
         }
 
-        let search_chars: Vec<char> = params.text.chars().collect();
-
         cache
             .into_iter()
             .filter(|(chr, name)| {
@@ -263,4 +267,3 @@ impl SearchEngine {
             .collect()
     }
 }
-

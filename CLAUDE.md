@@ -27,6 +27,7 @@ Glyphana is a Rust-based Unicode glyph exploration and collection tool built wit
 ```bash
 cargo build
 ```
+**Note:** Never run `cargo build --release` unless explicitly instructed by the user. Always use debug builds for development and testing.
 
 ### Run
 ```bash

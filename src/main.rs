@@ -93,4 +93,3 @@ fn load_icon() -> Result<egui::viewport::IconData, Box<dyn Error>> {
         height: icon_height,
     })
 }
-

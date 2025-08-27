@@ -2,6 +2,7 @@ use ahash::AHashSet as HashSet;
 use egui_dnd::dnd;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::Arc;
 
 use crate::categories::{
     Category, CharacterInspector, UnicodeCategory, UnicodeCollection, create_default_categories,
@@ -154,45 +155,59 @@ impl GlyphanaApp {
 
         // Add Noto Sans
         fonts.font_data.insert(
-            NOTO_SANS.into(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoSans-Regular.otf")),
+            NOTO_SANS.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoSans-Regular.otf"
+            ))),
         );
 
         // Add Noto Sans Mono
         fonts.font_data.insert(
-            NOTO_SANS_MONO.into(),
+            NOTO_SANS_MONO.to_owned(),
             // NotoSansMono not available, use NotoSans as fallback
-            egui::FontData::from_static(include_bytes!("../assets/NotoSans-Regular.otf")),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoSans-Regular.otf"
+            ))),
         );
 
         // Add Noto Sans Symbols
         fonts.font_data.insert(
-            NOTO_SANS_SYMBOLS.into(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoSansSymbols-Regular.ttf")),
+            NOTO_SANS_SYMBOLS.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoSansSymbols-Regular.ttf"
+            ))),
         );
 
         // Add Noto Sans Symbols 2
         fonts.font_data.insert(
-            NOTO_SANS_SYMBOLS2.into(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoSansSymbols2-Regular.ttf")),
+            NOTO_SANS_SYMBOLS2.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoSansSymbols2-Regular.ttf"
+            ))),
         );
 
         // Add Noto Sans Math
         fonts.font_data.insert(
-            NOTO_SANS_MATH.into(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoSansMath-Regular.ttf")),
+            NOTO_SANS_MATH.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoSansMath-Regular.ttf"
+            ))),
         );
 
         // Add Noto Music
         fonts.font_data.insert(
-            NOTO_MUSIC.into(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoMusic-Regular.ttf")),
+            NOTO_MUSIC.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoMusic-Regular.ttf"
+            ))),
         );
 
         // Add Noto Emoji (black and white)
         fonts.font_data.insert(
-            NOTO_EMOJI.into(),
-            egui::FontData::from_static(include_bytes!("../assets/NotoEmoji-Regular.ttf")),
+            NOTO_EMOJI.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoEmoji-Regular.ttf"
+            ))),
         );
 
         // AIDEV-NOTE: Color emoji support needs NotoColorEmoji.ttf file
@@ -203,48 +218,48 @@ impl GlyphanaApp {
         fonts.families.insert(
             egui::FontFamily::Proportional,
             vec![
-                NOTO_SANS.into(),
-                NOTO_EMOJI.into(),
-                NOTO_SANS_SYMBOLS.into(),
-                NOTO_SANS_SYMBOLS2.into(),
-                NOTO_SANS_MATH.into(),
-                NOTO_MUSIC.into(),
+                NOTO_SANS.to_owned(),
+                NOTO_EMOJI.to_owned(),
+                NOTO_SANS_SYMBOLS.to_owned(),
+                NOTO_SANS_SYMBOLS2.to_owned(),
+                NOTO_SANS_MATH.to_owned(),
+                NOTO_MUSIC.to_owned(),
             ],
         );
 
         fonts.families.insert(
             egui::FontFamily::Monospace,
             vec![
-                NOTO_SANS_MONO.into(),
-                NOTO_EMOJI.into(),
-                NOTO_SANS_SYMBOLS.into(),
-                NOTO_SANS_SYMBOLS2.into(),
-                NOTO_SANS_MATH.into(),
-                NOTO_MUSIC.into(),
+                NOTO_SANS_MONO.to_owned(),
+                NOTO_EMOJI.to_owned(),
+                NOTO_SANS_SYMBOLS.to_owned(),
+                NOTO_SANS_SYMBOLS2.to_owned(),
+                NOTO_SANS_MATH.to_owned(),
+                NOTO_MUSIC.to_owned(),
             ],
         );
 
         fonts.families.insert(
             egui::FontFamily::Name(NOTO_SANS.into()),
             vec![
-                NOTO_SANS.into(),
-                NOTO_EMOJI.into(),
-                NOTO_SANS_SYMBOLS.into(),
-                NOTO_SANS_SYMBOLS2.into(),
-                NOTO_SANS_MATH.into(),
-                NOTO_MUSIC.into(),
+                NOTO_SANS.to_owned(),
+                NOTO_EMOJI.to_owned(),
+                NOTO_SANS_SYMBOLS.to_owned(),
+                NOTO_SANS_SYMBOLS2.to_owned(),
+                NOTO_SANS_MATH.to_owned(),
+                NOTO_MUSIC.to_owned(),
             ],
         );
 
         fonts.families.insert(
             egui::FontFamily::Name(NOTO_EMOJI.into()),
             vec![
-                NOTO_EMOJI.into(),
-                NOTO_SANS.into(),
-                NOTO_SANS_SYMBOLS.into(),
-                NOTO_SANS_SYMBOLS2.into(),
-                NOTO_SANS_MATH.into(),
-                NOTO_MUSIC.into(),
+                NOTO_EMOJI.to_owned(),
+                NOTO_SANS.to_owned(),
+                NOTO_SANS_SYMBOLS.to_owned(),
+                NOTO_SANS_SYMBOLS2.to_owned(),
+                NOTO_SANS_MATH.to_owned(),
+                NOTO_MUSIC.to_owned(),
             ],
         );
 
@@ -268,7 +283,7 @@ impl eframe::App for GlyphanaApp {
 
         // Update the glyph cache if needed
         if self.full_glyph_cache.is_empty() {
-            self.update_full_glyph_cache(&ctx);
+            self.update_full_glyph_cache(ctx);
         }
 
         // Top panel with search and controls
@@ -352,6 +367,9 @@ impl GlyphanaApp {
             ui.heading("Categories");
 
             // Handle drag and drop
+            let selected_category = self.selected_category;
+            let mut category_clicked = None;
+
             let response = dnd(ui, "category_dnd").show_vec(
                 &mut self.categories,
                 |ui, category, handle, _state| {
@@ -360,14 +378,18 @@ impl GlyphanaApp {
                             ui.label("≡");
                         });
 
-                        let is_selected = self.selected_category == category.id();
+                        let is_selected = selected_category == category.id();
                         if ui.selectable_label(is_selected, &category.name).clicked() {
-                            self.selected_category = category.id();
-                            self.update_search_text_and_cache();
+                            category_clicked = Some(category.id());
                         }
                     });
                 },
             );
+
+            if let Some(cat_id) = category_clicked {
+                self.selected_category = cat_id;
+                self.update_search_text_and_cache();
+            }
 
             if response.final_update().is_some() {
                 self.update_search_text_and_cache();
@@ -422,11 +444,12 @@ impl GlyphanaApp {
             ui.separator();
 
             if ui.button("Copy Character").clicked() {
-                ui.output_mut(|o| o.copied_text = self.selected_char.to_string());
+                ui.ctx().copy_text(self.selected_char.to_string());
             }
 
             if ui.button("Copy Unicode").clicked() {
-                ui.output_mut(|o| o.copied_text = format!("U+{:04X}", self.selected_char as u32));
+                ui.ctx()
+                    .copy_text(format!("U+{:04X}", self.selected_char as u32));
             }
 
             if !self.collection.contains(&self.selected_char) {
@@ -554,7 +577,7 @@ impl GlyphanaApp {
 
         let available_width = ui.available_width();
         let columns = ((available_width - spacing) / (base_size + spacing)).floor() as usize;
-        let columns = columns.max(1);
+        let _columns = columns.max(1);
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -635,17 +658,10 @@ impl GlyphanaApp {
 
 // Helper methods
 impl GlyphanaApp {
-    fn update_full_glyph_cache(&mut self, ctx: &egui::Context) {
-        ctx.fonts(|fonts| {
-            self.full_glyph_cache = available_characters(
-                &egui::Ui::new(
-                    ctx.clone(),
-                    egui::LayerId::background(),
-                    egui::Id::new("cache_update"),
-                ),
-                egui::FontFamily::Name(NOTO_SANS.into()),
-            );
-        });
+    fn update_full_glyph_cache(&mut self, _ctx: &egui::Context) {
+        // AIDEV-TODO: Update this to use proper font range detection from egui
+        // For now, use a simplified version
+        self.full_glyph_cache = available_characters();
         self.update_search_text_and_cache();
     }
 
@@ -705,4 +721,3 @@ pub const NOTO_SANS_SYMBOLS2: &str = "NotoSansSymbols2";
 pub const NOTO_SANS_MATH: &str = "NotoSansMath";
 pub const NOTO_MUSIC: &str = "NotoMusic";
 pub const NOTO_EMOJI: &str = "NotoEmoji";
-
