@@ -9,7 +9,10 @@ use crate::categories::{
 };
 use crate::glyph::{GlyphScale, available_characters, char_name};
 use crate::search::{SearchEngine, SearchParams};
-use crate::ui::{COLLECTION, RECENTLY_USED, SEARCH, collection_id, recently_used_id, search_id};
+use crate::ui::{
+    COLLECTION, MAGNIFIER, NAME_BADGE, RECENTLY_USED, SEARCH, collection_id, recently_used_id,
+    search_id,
+};
 
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Deserialize, Serialize)]
@@ -222,58 +225,52 @@ impl GlyphanaApp {
         // The file exists in assets/fonts/ but needs to be enabled properly
         // This would require additional font rendering support for color glyphs
 
-        // Configure font families
-        fonts.families.insert(
-            egui::FontFamily::Proportional,
-            vec![
-                NOTO_SANS.to_owned(),
-                NOTO_EMOJI.to_owned(),
-                EMOJI_ICON.to_owned(),
-                NOTO_SANS_SYMBOLS.to_owned(),
-                NOTO_SANS_SYMBOLS2.to_owned(),
-                NOTO_SANS_MATH.to_owned(),
-                NOTO_MUSIC.to_owned(),
-            ],
-        );
+        // Configure font families - create base font list to avoid duplication
+        let base_fonts = vec![
+            NOTO_EMOJI.to_owned(),
+            EMOJI_ICON.to_owned(),
+            NOTO_SANS_SYMBOLS.to_owned(),
+            NOTO_SANS_SYMBOLS2.to_owned(),
+            NOTO_SANS_MATH.to_owned(),
+            NOTO_MUSIC.to_owned(),
+        ];
 
-        fonts.families.insert(
-            egui::FontFamily::Monospace,
-            vec![
-                NOTO_SANS_MONO.to_owned(),
-                NOTO_EMOJI.to_owned(),
-                EMOJI_ICON.to_owned(),
-                NOTO_SANS_SYMBOLS.to_owned(),
-                NOTO_SANS_SYMBOLS2.to_owned(),
-                NOTO_SANS_MATH.to_owned(),
-                NOTO_MUSIC.to_owned(),
-            ],
-        );
+        // Proportional font family
+        let mut proportional_fonts = vec![NOTO_SANS.to_owned()];
+        proportional_fonts.extend(base_fonts.clone());
+        fonts
+            .families
+            .insert(egui::FontFamily::Proportional, proportional_fonts);
 
-        fonts.families.insert(
-            egui::FontFamily::Name(NOTO_SANS.into()),
-            vec![
-                NOTO_SANS.to_owned(),
-                NOTO_EMOJI.to_owned(),
-                EMOJI_ICON.to_owned(),
-                NOTO_SANS_SYMBOLS.to_owned(),
-                NOTO_SANS_SYMBOLS2.to_owned(),
-                NOTO_SANS_MATH.to_owned(),
-                NOTO_MUSIC.to_owned(),
-            ],
-        );
+        // Monospace font family
+        let mut monospace_fonts = vec![NOTO_SANS_MONO.to_owned()];
+        monospace_fonts.extend(base_fonts.clone());
+        fonts
+            .families
+            .insert(egui::FontFamily::Monospace, monospace_fonts);
 
-        fonts.families.insert(
-            egui::FontFamily::Name(NOTO_EMOJI.into()),
-            vec![
-                NOTO_EMOJI.to_owned(),
-                EMOJI_ICON.to_owned(),
-                NOTO_SANS.to_owned(),
-                NOTO_SANS_SYMBOLS.to_owned(),
-                NOTO_SANS_SYMBOLS2.to_owned(),
-                NOTO_SANS_MATH.to_owned(),
-                NOTO_MUSIC.to_owned(),
-            ],
-        );
+        // Named NotoSans font family
+        let mut noto_sans_fonts = vec![NOTO_SANS.to_owned()];
+        noto_sans_fonts.extend(base_fonts.clone());
+        fonts
+            .families
+            .insert(egui::FontFamily::Name(NOTO_SANS.into()), noto_sans_fonts);
+
+        // Named NotoEmoji font family (emoji prioritized)
+        let mut emoji_fonts = vec![
+            NOTO_EMOJI.to_owned(),
+            EMOJI_ICON.to_owned(),
+            NOTO_SANS.to_owned(),
+        ];
+        emoji_fonts.extend(vec![
+            NOTO_SANS_SYMBOLS.to_owned(),
+            NOTO_SANS_SYMBOLS2.to_owned(),
+            NOTO_SANS_MATH.to_owned(),
+            NOTO_MUSIC.to_owned(),
+        ]);
+        fonts
+            .families
+            .insert(egui::FontFamily::Name(NOTO_EMOJI.into()), emoji_fonts);
 
         fonts
     }
@@ -314,7 +311,7 @@ impl GlyphanaApp {
     fn render_top_panel(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.label("🔍");
+                ui.label(MAGNIFIER.to_string());
 
                 let search_response = ui.text_edit_singleline(&mut self.ui_search_text);
                 if search_response.changed() {
@@ -332,7 +329,10 @@ impl GlyphanaApp {
                     &mut self.search_only_categories,
                     "Search only selected category",
                 );
-                ui.checkbox(&mut self.search_name, "Search names");
+                ui.checkbox(
+                    &mut self.search_name,
+                    format!("{} Search names", NAME_BADGE),
+                );
                 ui.checkbox(&mut self.case_sensitive, "Case sensitive");
 
                 ui.separator();

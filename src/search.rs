@@ -70,9 +70,22 @@ impl SearchEngine {
         text: &str,
         full_cache: &BTreeMap<char, String>,
     ) -> Option<BTreeMap<char, String>> {
-        // Check for single character's Unicode block
+        // Helper to create single character result
+        let single_char_result = |chr: char, name: &String| -> BTreeMap<char, String> {
+            let mut result = BTreeMap::new();
+            result.insert(chr, name.clone());
+            result
+        };
+
+        // Check for single character search (exact match or Unicode block)
         if text.chars().count() == 1 {
             if let Some(chr) = text.chars().next() {
+                // First, try exact character match
+                if let Some(name) = full_cache.get(&chr) {
+                    return Some(single_char_result(chr, name));
+                }
+
+                // If no exact match, return all characters in the same Unicode block
                 if let Some(block) = unicode_blocks::find_unicode_block(chr) {
                     let results: BTreeMap<char, String> = full_cache
                         .iter()
@@ -93,9 +106,7 @@ impl SearchEngine {
         // Check for hex code search (U+XXXX or 0xXXXX format)
         if let Some(chr) = Self::parse_hex_code(text) {
             if let Some(name) = full_cache.get(&chr) {
-                let mut result = BTreeMap::new();
-                result.insert(chr, name.clone());
-                return Some(result);
+                return Some(single_char_result(chr, name));
             }
         }
 
@@ -103,20 +114,7 @@ impl SearchEngine {
         if let Ok(code) = text.parse::<u32>() {
             if let Some(chr) = char::from_u32(code) {
                 if let Some(name) = full_cache.get(&chr) {
-                    let mut result = BTreeMap::new();
-                    result.insert(chr, name.clone());
-                    return Some(result);
-                }
-            }
-        }
-
-        // Check for single character search
-        if text.chars().count() == 1 {
-            if let Some(chr) = text.chars().next() {
-                if let Some(name) = full_cache.get(&chr) {
-                    let mut result = BTreeMap::new();
-                    result.insert(chr, name.clone());
-                    return Some(result);
+                    return Some(single_char_result(chr, name));
                 }
             }
         }
@@ -128,15 +126,15 @@ impl SearchEngine {
         let cleaned = text.trim().to_lowercase();
 
         // Try U+XXXX format
-        if cleaned.starts_with("u+") {
-            if let Ok(code) = u32::from_str_radix(&cleaned[2..], 16) {
+        if let Some(hex) = cleaned.strip_prefix("u+") {
+            if let Ok(code) = u32::from_str_radix(hex, 16) {
                 return char::from_u32(code);
             }
         }
 
         // Try 0xXXXX format
-        if cleaned.starts_with("0x") {
-            if let Ok(code) = u32::from_str_radix(&cleaned[2..], 16) {
+        if let Some(hex) = cleaned.strip_prefix("0x") {
+            if let Ok(code) = u32::from_str_radix(hex, 16) {
                 return char::from_u32(code);
             }
         }
