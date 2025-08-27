@@ -727,12 +727,21 @@ impl GlyphanaApp {
                     label_color,
                 );
 
-                // Draw the character
+                // Draw the character - use appropriate font for emoji
+                let font_family = if self.selected_char as u32 >= 0x1F300
+                    || (self.selected_char as u32 >= 0x2600 && self.selected_char as u32 <= 0x27BF)
+                {
+                    // Emoji ranges
+                    egui::FontFamily::Name(NOTO_EMOJI.into())
+                } else {
+                    egui::FontFamily::Name(NOTO_SANS.into())
+                };
+
                 painter.text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
                     self.selected_char.to_string(),
-                    egui::FontId::new(72.0, egui::FontFamily::Name(NOTO_SANS.into())),
+                    egui::FontId::new(72.0, font_family),
                     egui::Color32::WHITE,
                 );
             });
@@ -788,11 +797,21 @@ impl GlyphanaApp {
                         },
                     );
 
+                    // Use appropriate font for emoji
+                    let font_family = if chr as u32 >= 0x1F300
+                        || (chr as u32 >= 0x2600 && chr as u32 <= 0x27BF)
+                    {
+                        // Emoji ranges
+                        egui::FontFamily::Name(NOTO_EMOJI.into())
+                    } else {
+                        self.default_font_id.family.clone()
+                    };
+
                     ui.painter().text(
                         rect.center(),
                         egui::Align2::CENTER_CENTER,
                         chr.to_string(),
-                        egui::FontId::new(base_size * 0.6, self.default_font_id.family.clone()),
+                        egui::FontId::new(base_size * 0.6, font_family),
                         egui::Color32::WHITE,
                     );
 
@@ -854,7 +873,18 @@ impl GlyphanaApp {
 // Helper methods
 impl GlyphanaApp {
     fn update_full_glyph_cache(&mut self, ctx: &egui::Context) {
-        self.full_glyph_cache = available_characters(ctx, egui::FontFamily::Name(NOTO_SANS.into()));
+        // Get characters from multiple font families to ensure we capture all glyphs including emoji
+        let mut all_chars = available_characters(ctx, egui::FontFamily::Name(NOTO_SANS.into()));
+
+        // Also get characters from the emoji font family
+        let emoji_chars = available_characters(ctx, egui::FontFamily::Name(NOTO_EMOJI.into()));
+        all_chars.extend(emoji_chars);
+
+        // Also check Proportional family which includes all fonts
+        let prop_chars = available_characters(ctx, egui::FontFamily::Proportional);
+        all_chars.extend(prop_chars);
+
+        self.full_glyph_cache = all_chars;
         self.update_search_text_and_cache();
     }
 
@@ -949,12 +979,20 @@ impl GlyphanaApp {
             .color
             .linear_multiply(info_text_color.r() as f32 / 255.0 * 0.3);
 
-        // Draw the glyph
+        // Draw the glyph - use appropriate font family for emoji
+        // Check if the character is likely an emoji based on Unicode ranges
+        let font_family = if self.selected_char as u32 >= 0x1F300 {
+            // Emoji ranges typically start around U+1F300
+            egui::FontFamily::Name(NOTO_EMOJI.into())
+        } else {
+            egui::FontFamily::Name(NOTO_SANS.into())
+        };
+
         painter.text(
             egui::Pos2::new(center.x, top + scale + glyph_scale * 0.023),
             egui::Align2::CENTER_BOTTOM,
             self.selected_char,
-            egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
+            egui::FontId::new(glyph_scale, font_family),
             glyph_color,
         );
 

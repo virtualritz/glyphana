@@ -203,10 +203,8 @@ impl SearchEngine {
                     if chr_str.contains(&params.text) {
                         return true;
                     }
-                } else {
-                    if chr_str.to_lowercase().contains(&params.text.to_lowercase()) {
-                        return true;
-                    }
+                } else if chr_str.to_lowercase().contains(&params.text.to_lowercase()) {
+                    return true;
                 }
 
                 // Check name
