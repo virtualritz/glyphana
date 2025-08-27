@@ -6,6 +6,16 @@ use std::error::Error;
 // Import the library modules
 use glyphana::GlyphanaApp;
 
+// Character constants from master branch
+pub const CANCELLATION: char = '🗙';
+pub const COG_WHEEL: char = '⚙';
+pub const HAMBURGER: char = '☰';
+pub const MAGNIFIER: char = '🔍';
+pub const NAME_BADGE: char = '📛';
+pub const LOWER_UPPER_CASE: char = '🗛';
+pub const PUSH_PIN: char = '📌';
+pub const SUBSET: char = '⊂';
+
 fn main() -> Result<(), Box<dyn Error>> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
     tracing_subscriber::fmt::init();
@@ -93,3 +103,4 @@ fn load_icon() -> Result<egui::viewport::IconData, Box<dyn Error>> {
         height: icon_height,
     })
 }
+

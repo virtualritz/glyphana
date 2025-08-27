@@ -25,9 +25,7 @@
 
 ## Left Panel
 
-* [x] Display selected char.
-* [ ] Convert case for selected char via `unicode-case-mapping` crate.
-* [ ] Display character variants in middle panel (including ligatures).
+* [ ] Allow reordering of categories (see `dnd` branch).
 
 ## Middle Panel
 
@@ -36,7 +34,10 @@
 
 ## Right Panel
 
+* [x] Display selected char.
 * [ ] Display horizontal glyph metrics.
 * [ ] Fix width of Unicode/UTF-8 area (`egui` issue).
 * [ ] Block resizing panel area if character name, Unicode/UTF-8 and
       `Collect` button would be pushed outside of window bounds.
+* [ ] Convert case for selected char via `unicode-case-mapping` crate.
+* [ ] Display character variants in bottom (including ligatures).

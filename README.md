@@ -8,21 +8,26 @@ It is inspired by the [macOS Character Viewer](https://support.apple.com/guide/m
 which I sorely miss on Linux and Windows.
 
 ![Searching for the characters contained in 'grinning cat' as well as matching
-the term against each glyp's description](screenshot.png)
+the term against each glyph's description](https://raw.githubusercontent.com/virtualritz/glyphana/master/screenshot.png)
 
 ## Caveat
 
 This was hacked over the course of a few free hours here and there.
 
 It currently is limited to most of the functionality I personally miss from
-Character Viewer. I.e. it is far from feature parity with this tool.
+Character Viewer. I.e. it is far from feature parity with the latter.
 
 It also lacks the abilit of Windows Character Map to compose strings. A feature
 I miss from Character Viewer and plan to add.
 
-## Installation & Updates
+## Releases
 
-For now you need to have [Rust installed](https://www.rust-lang.org/tools/install).
+You can grab a pre-built bimary for **Windows 2019+**, **Linux** or
+**macOS 11+** from the [Releases page](https://github.com/virtualritz/glyphana/releases).
+
+## Building- & Updating From Source
+
+You need to have [Rust installed](https://www.rust-lang.org/tools/install).
 
 From a terminal (command line) run:
 
@@ -45,22 +50,24 @@ cargo install-update glyphana
 
 ## Features
 
+#### Clipboard
+
 * Copy an individual character to the clipboard.
-
-### Inspection
-
-* Inspect individual characters (show name, Unicode, UTF-8).
 * Copy Unicode as hex in HTML format to the clipboard,
 * Copy UTF-8 as hex to the clipboard.
+
+#### Inspection
+
+* Inspect individual characters (show name, Unicode, UTF-8).
 * Store character in a persistent collection.
 
-### Browsing
+#### Browsing
 
 * View recently inspected characters.
 * View collected characters.
 * Browse characters by categories.
 
-### Search
+#### Search
 
 * Search for individual characters.
   * Consider case.

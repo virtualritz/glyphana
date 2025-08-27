@@ -210,6 +210,14 @@ impl GlyphanaApp {
             ))),
         );
 
+        // Add Emoji Icon font from master
+        fonts.font_data.insert(
+            EMOJI_ICON.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/emoji-icon-font.ttf"
+            ))),
+        );
+
         // AIDEV-NOTE: Color emoji support needs NotoColorEmoji.ttf file
         // The file exists in assets/fonts/ but needs to be enabled properly
         // This would require additional font rendering support for color glyphs
@@ -220,6 +228,7 @@ impl GlyphanaApp {
             vec![
                 NOTO_SANS.to_owned(),
                 NOTO_EMOJI.to_owned(),
+                EMOJI_ICON.to_owned(),
                 NOTO_SANS_SYMBOLS.to_owned(),
                 NOTO_SANS_SYMBOLS2.to_owned(),
                 NOTO_SANS_MATH.to_owned(),
@@ -232,6 +241,7 @@ impl GlyphanaApp {
             vec![
                 NOTO_SANS_MONO.to_owned(),
                 NOTO_EMOJI.to_owned(),
+                EMOJI_ICON.to_owned(),
                 NOTO_SANS_SYMBOLS.to_owned(),
                 NOTO_SANS_SYMBOLS2.to_owned(),
                 NOTO_SANS_MATH.to_owned(),
@@ -244,6 +254,7 @@ impl GlyphanaApp {
             vec![
                 NOTO_SANS.to_owned(),
                 NOTO_EMOJI.to_owned(),
+                EMOJI_ICON.to_owned(),
                 NOTO_SANS_SYMBOLS.to_owned(),
                 NOTO_SANS_SYMBOLS2.to_owned(),
                 NOTO_SANS_MATH.to_owned(),
@@ -255,6 +266,7 @@ impl GlyphanaApp {
             egui::FontFamily::Name(NOTO_EMOJI.into()),
             vec![
                 NOTO_EMOJI.to_owned(),
+                EMOJI_ICON.to_owned(),
                 NOTO_SANS.to_owned(),
                 NOTO_SANS_SYMBOLS.to_owned(),
                 NOTO_SANS_SYMBOLS2.to_owned(),
@@ -721,3 +733,4 @@ pub const NOTO_SANS_SYMBOLS2: &str = "NotoSansSymbols2";
 pub const NOTO_SANS_MATH: &str = "NotoSansMath";
 pub const NOTO_MUSIC: &str = "NotoMusic";
 pub const NOTO_EMOJI: &str = "NotoEmoji";
+pub const EMOJI_ICON: &str = "EmojiIcon";
