@@ -779,7 +779,11 @@ impl GlyphanaApp {
                     .filter_map(|c| self.full_glyph_cache.get(&c).map(|n| (c, n.clone())))
                     .collect()
             } else {
-                vec![]
+                // No category selected - show all available glyphs
+                self.full_glyph_cache
+                    .iter()
+                    .map(|(&c, n)| (c, n.clone()))
+                    .collect()
             }
         }
     }
@@ -787,10 +791,8 @@ impl GlyphanaApp {
 
 // Helper methods
 impl GlyphanaApp {
-    fn update_full_glyph_cache(&mut self, _ctx: &egui::Context) {
-        // AIDEV-TODO: Update this to use proper font range detection from egui
-        // For now, use a simplified version
-        self.full_glyph_cache = available_characters();
+    fn update_full_glyph_cache(&mut self, ctx: &egui::Context) {
+        self.full_glyph_cache = available_characters(ctx, egui::FontFamily::Name(NOTO_SANS.into()));
         self.update_search_text_and_cache();
     }
 
