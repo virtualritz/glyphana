@@ -8,31 +8,34 @@ rust-version = "1.69"
 license = "(MIT OR Apache-2.0 OR BSD-3-Clause) AND OFL-1.1"
 
 [dependencies]
-ahash = "0.8.3"
-bytemuck = "1.13.1"
-eframe = { version = "0.22.0", default-features = false, features = [
+ahash = "0.8.12"
+bytemuck = "1.23.2"
+eframe = { version = "0.32.1", default-features = false, features = [
     #"accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
     "persistence",   # Enable restoring app state when restarting the app.
+    "wayland",       # Enable wayland support for Linux
+    "x11",           # Enable X11 support for Linux
     #"wgpu"           # Alternative backend if "glow" gives your trouble.
 ] }
-egui = "0.22"
-egui_dnd = "0.5"
+egui = "0.32.1"
+egui_dnd = "0.13.0"
 encode_unicode = "1.0"
 #enigo = "0.0.14"
 enum_dispatch = "0.3"
 glyph-names = "0.2"
-image = { version = "0.24", default-features = false, features = ["png"] }
+image = { version = "0.25.6", default-features = false, features = ["png"] }
 include-flate = "0.2"
-rusttype = "0.9"
+rusttype = "0.9.3"
 serde = { version = "1", features = ["derive"] }
 textwrap = "0.16"
 #tray-icon = "0.4.3"
-unicode-blocks = "0.1"
+unicode-blocks = "0.1.9"
 unicode-case-mapping = "0.5"
 unicode_names2 = "1.0"
 unicode_skeleton = "0.1"
+stringzilla = "3.12"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -57,8 +60,8 @@ inherits = "release"
 #split-debuginfo = "packed"
 
 [patch.crates-io]
-egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
-eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
+#egui = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
+#eframe = { git = "https://github.com/emilk/egui", branch = "master" } # rev = "4bd4eca2e4b440ca585d8844740afd8144ba7dbc" } # branch = "master" }
 unicode_skeleton = { git = "https://github.com/virtualritz/unicode_skeleton.git", branch = "master" }
 #decancer = { git = "https://github.com/null8626/decancer.git", branch = "main" }
 #tray-icon = { git = "https://github.com/tauri-apps/tray-icon.git", branch = "dev" }

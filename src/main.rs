@@ -1,6 +1,5 @@
 #![warn(clippy::all)]
-#![allow(clippy::blocks_in_if_conditions)]
-#![feature(let_chains)]
+#![allow(clippy::blocks_in_conditions)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 use image::ImageDecoder;
@@ -97,7 +96,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     */
 
     let native_options = eframe::NativeOptions {
-        icon_data: Some(icon),
+        viewport: egui::ViewportBuilder::default().with_icon(icon),
         //renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
@@ -105,25 +104,27 @@ fn main() -> Result<(), Box<dyn Error>> {
     eframe::run_native(
         "Glyphana",
         native_options,
-        Box::new(|creation_context| Box::new(crate::GlyphanaApp::new(creation_context))),
+        Box::new(|creation_context| Ok(Box::new(crate::GlyphanaApp::new(creation_context)))),
     )?;
 
     Ok(())
 }
 
-fn load_icon() -> eframe::IconData {
+fn load_icon() -> egui::viewport::IconData {
     flate!(static ICON: [u8] from "assets/icon-1024.png");
     let icon: &[u8] = &ICON;
 
     let (icon_rgba, icon_width, icon_height) = {
-        let image = image::codecs::png::PngDecoder::new(icon).expect("Failed to decode icon");
+        use std::io::Cursor;
+        let image =
+            image::codecs::png::PngDecoder::new(Cursor::new(icon)).expect("Failed to decode icon");
         let mut rgba = vec![0; image.total_bytes() as _];
         let (width, height) = image.dimensions();
         image.read_image(&mut rgba).unwrap();
         (rgba, width, height)
     };
 
-    eframe::IconData {
+    egui::viewport::IconData {
         rgba: icon_rgba,
         width: icon_width,
         height: icon_height,

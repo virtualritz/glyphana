@@ -8,6 +8,7 @@ use std::{
     collections::{BTreeMap, VecDeque},
     hash::{Hash, Hasher},
 };
+use stringzilla::StringZilla;
 use unicode_blocks as ub;
 
 use crate::*;
@@ -77,6 +78,11 @@ impl Category {
             unicode_category,
         }
     }
+
+    #[allow(dead_code)]
+    pub fn id(&self) -> egui::Id {
+        egui::Id::new(&self.name)
+    }
 }
 
 impl Hash for Category {
@@ -87,6 +93,7 @@ impl Hash for Category {
 
 #[enum_dispatch]
 trait CharacterInspector {
+    #[allow(dead_code)]
     fn characters(&self) -> Vec<char>;
     fn contains(&self, c: char) -> bool;
 }
@@ -358,8 +365,8 @@ impl GlyphanaApp {
                 .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
                 .characters()
                 .iter()
-                .filter(|chr| !chr.is_whitespace() && !chr.is_ascii_control())
-                .map(|&chr| {
+                .filter(|(chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
+                .map(|(&chr, _)| {
                     //println!("{}", chr);
                     (chr, char_name(chr))
                 })
@@ -375,38 +382,23 @@ impl GlyphanaApp {
 
         fonts.font_data.insert(
             NOTO_SANS.to_owned(),
-            egui::FontData::from_static(&NOTO_SANS_FONT),
+            egui::FontData::from_static(&NOTO_SANS_FONT).into(),
         );
         fonts.font_data.insert(
             NOTO_SANS_MATH.to_owned(),
-            egui::FontData::from_static(&NOTO_SANS_MATH_FONT).tweak(egui::FontTweak {
-                y_offset_factor: -0.27, // move it up
-                ..Default::default()
-            }),
+            egui::FontData::from_static(&NOTO_SANS_MATH_FONT).into(),
         );
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
-            egui::FontData::from_static(&NOTO_EMOJI_FONT).tweak(egui::FontTweak {
-                scale: 0.73,           // make it smaller
-                y_offset_factor: 0.15, // move it down
-                ..Default::default()
-            }),
+            egui::FontData::from_static(&NOTO_EMOJI_FONT).into(),
         );
         fonts.font_data.insert(
             NOTO_SYMBOLS.to_owned(),
-            egui::FontData::from_static(&NOTO_SYMBOLS_FONT).tweak(egui::FontTweak {
-                scale: 0.9,             // make it smaller
-                y_offset_factor: -0.43, // move it up
-                ..Default::default()
-            }),
+            egui::FontData::from_static(&NOTO_SYMBOLS_FONT).into(),
         );
         fonts.font_data.insert(
             NOTO_SYMBOLS2.to_owned(),
-            egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).tweak(egui::FontTweak {
-                scale: 0.8,              // make it smaller
-                y_offset_factor: -0.243, // move it up
-                ..Default::default()
-            }),
+            egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).into(),
         );
         /*fonts.font_data.insert(
             NOTO_SIGN_WRITING.to_owned(),
@@ -418,10 +410,7 @@ impl GlyphanaApp {
         );*/
         fonts.font_data.insert(
             NOTO_MUSIC.to_owned(),
-            egui::FontData::from_static(&NOTO_MUSIC_FONT).tweak(egui::FontTweak {
-                scale: 0.7, // make it smaller
-                ..Default::default()
-            }),
+            egui::FontData::from_static(&NOTO_MUSIC_FONT).into(),
         );
 
         fonts.families.insert(
@@ -457,7 +446,7 @@ impl eframe::App for GlyphanaApp {
 
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             // Hamburger menu.
-            egui::menu::bar(ui, |ui| {
+            ui.horizontal(|ui| {
                 ui.menu_button(format!("{}", super::HAMBURGER), |ui| {
                     #[cfg(debug_assertions)]
                     if ui.button("Reset App State").clicked() {
@@ -493,7 +482,7 @@ impl eframe::App for GlyphanaApp {
                     ui.separator();
 
                     if ui.button("Quit").clicked() {
-                        _frame.close();
+                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
 
@@ -683,7 +672,7 @@ impl eframe::App for GlyphanaApp {
                                 })
                                 .clicked()
                             {
-                                ui.output_mut(|o| o.copied_text = unicode_html_string);
+                                ui.ctx().copy_text(unicode_html_string);
                             }
 
                             ui.end_row();
@@ -719,7 +708,7 @@ impl eframe::App for GlyphanaApp {
                                 })
                                 .clicked()
                             {
-                                ui.output_mut(|o| o.copied_text = utf_eight_string);
+                                ui.ctx().copy_text(utf_eight_string);
                             }
 
                             ui.end_row();
@@ -740,7 +729,7 @@ impl eframe::App for GlyphanaApp {
                                     ui.label("Add Glyp to Collection");
                                 };
                                 if ui
-                                    .add(egui::SelectableLabel::new(is_in_collection, "Collect"))
+                                    .add(egui::Button::new("Collect").selected(is_in_collection))
                                     .on_hover_ui(hover_text)
                                     .clicked()
                                 {
@@ -822,7 +811,7 @@ impl eframe::App for GlyphanaApp {
 
                             if hover_button.double_clicked() {
                                 // Send to clipboard.
-                                ui.output_mut(|o| o.copied_text = chr.to_string());
+                                ui.ctx().copy_text(chr.to_string());
 
                                 /*use enigo::KeyboardControllable;
                                 let mut enigo = enigo::Enigo::new();
@@ -882,20 +871,17 @@ impl GlyphanaApp {
             }
         } else {
             self.selected_category = *SEARCH_ID;
+            // Use StringZilla for fuzzy matching with edit distance
+            // Lower threshold = stricter matching
+            let max_edit_distance = 2; // Allow up to 2 character edits for fuzzy matches
+
             self.showed_glyph_cache = self
                 .full_glyph_cache
                 .clone()
                 .into_iter()
                 // Filter by search string.
                 .filter(|(chr, name)| {
-                    //let mut tmp = [0u8; 4];
-
-                    //let cmp_chr unicode_case_mapping::case_folded(chr).unwrap_or_else(|| chr as _)
-                    //let chr_str = chr.encode_utf8(&mut tmp);
-
-                    //info!("{}", chr);
-                    //let cured_chr = decancer::cure(chr_str).into_str();
-                    let chr = match self.case_sensitive {
+                    let chr_normalized = match self.case_sensitive {
                         true => *chr,
                         false => {
                             let lower_case = unicode_case_mapping::to_lowercase(*chr);
@@ -906,21 +892,145 @@ impl GlyphanaApp {
                         }
                     };
 
-                    (self.search_name
-                        && self
-                            .split_search_text_lower
-                            .iter()
-                            .any(|text| name.contains(text)))
-                        || (!self.search_name && self.search_text.contains(&chr.to_string()))
-                        || self.split_search_text_lower.iter().any(|text| {
-                            glyph_names::glyph_name(chr as _)
-                                .map(|name| name.contains(text))
+                    // Search in multiple places for maximum flexibility
+                    let mut matches = false;
+
+                    // 1. Direct character match
+                    if self.search_text.contains(&chr_normalized.to_string()) {
+                        matches = true;
+                    }
+
+                    // 2. Fuzzy search in character name using edit distance
+                    if !matches {
+                        let name_lower = name.to_lowercase();
+                        if self.split_search_text_lower.iter().any(|text| {
+                            // Try exact contains first for performance
+                            if name_lower.contains(text) {
+                                return true;
+                            }
+                            // Then try fuzzy matching with edit distance
+                            // For short search strings, use stricter matching
+                            let adjusted_distance = if text.len() <= 3 {
+                                1
+                            } else {
+                                max_edit_distance
+                            };
+                            
+                            // Check if any substring of name has low edit distance to search text
+                            if text.len() <= name_lower.len() {
+                                for i in 0..=(name_lower.len() - text.len()) {
+                                    let substring = &name_lower[i..i + text.len()];
+                                    if text.sz_edit_distance(substring) <= adjusted_distance {
+                                        return true;
+                                    }
+                                }
+                            }
+                            false
+                        }) {
+                            matches = true;
+                        }
+                    }
+
+                    // 3. Fuzzy search in glyph names
+                    if !matches
+                        && self.split_search_text_lower.iter().any(|text| {
+                            glyph_names::glyph_name(*chr as _)
+                                .map(|gname| {
+                                    let gname_lower = gname.to_lowercase();
+                                    // Try exact contains first
+                                    if gname_lower.contains(text) {
+                                        return true;
+                                    }
+                                    // Then try fuzzy matching with edit distance
+                                    let adjusted_distance = if text.len() <= 3 {
+                                        1
+                                    } else {
+                                        max_edit_distance
+                                    };
+                                    
+                                    if text.len() <= gname_lower.len() {
+                                        for i in 0..=(gname_lower.len() - text.len()) {
+                                            let substring = &gname_lower[i..i + text.len()];
+                                            if text.sz_edit_distance(substring) <= adjusted_distance {
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                    false
+                                })
                                 .unwrap_or(false)
                         })
-                        || self.search_text.chars().any(|c| {
-                            //cured_chr.chars().next().unwrap() == c ||
-                            unicode_skeleton::confusable([chr].into_iter(), [c].into_iter())
+                    {
+                        matches = true;
+                    }
+
+                    // 4. Fuzzy search Unicode block name
+                    if !matches
+                        && self.split_search_text_lower.iter().any(|text| {
+                            ub::find_unicode_block(*chr)
+                                .map(|block| {
+                                    let block_name = block.name().to_lowercase();
+                                    // Try exact contains first
+                                    if block_name.contains(text) {
+                                        return true;
+                                    }
+                                    // Then try fuzzy matching
+                                    let adjusted_distance = if text.len() <= 3 {
+                                        1
+                                    } else {
+                                        max_edit_distance
+                                    };
+                                    
+                                    if text.len() <= block_name.len() {
+                                        for i in 0..=(block_name.len() - text.len()) {
+                                            let substring = &block_name[i..i + text.len()];
+                                            if text.sz_edit_distance(substring) <= adjusted_distance {
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                    false
+                                })
+                                .unwrap_or(false)
                         })
+                    {
+                        matches = true;
+                    }
+
+                    // 5. Search for hex code (e.g., "U+1F600" or just "1F600") - NO FUZZY
+                    if !matches {
+                        let hex_code = format!("{:04X}", *chr as u32);
+                        if self.split_search_text.iter().any(|text| {
+                            let search_upper = text.to_uppercase();
+                            hex_code.contains(&search_upper) || search_upper.contains(&hex_code)
+                        }) {
+                            matches = true;
+                        }
+                    }
+
+                    // 6. Search for confusable characters
+                    if !matches
+                        && self.search_text.chars().any(|c| {
+                            unicode_skeleton::confusable(
+                                [chr_normalized].into_iter(),
+                                [c].into_iter(),
+                            )
+                        })
+                    {
+                        matches = true;
+                    }
+
+                    // 7. Search for decimal code - NO FUZZY
+                    if !matches {
+                        let decimal_code = (*chr as u32).to_string();
+                        if self
+                            .split_search_text.contains(&decimal_code)
+                        {
+                            matches = true;
+                        }
+                    }
+
+                    matches
                 })
                 .collect()
         }
@@ -933,34 +1043,41 @@ impl GlyphanaApp {
         response: egui::Response,
         painter: egui::Painter,
     ) {
-        /*let color = if ui.visuals().dark_mode {
-            egui::Color32::from_additive_luminance(196)
-        } else {
-            egui::Color32::from_black_alpha(240)
-        };*/
-
-        //egui::RichText::new("&").size(20.0);
-
-        //let (response, painter) =
-        //    ui.allocate_painter(Vec2::new(ui.available_width(), 300.0), Sense::hover());
-
         let rect = response.rect;
-
         let center = rect.center();
 
-        let glyph_scale = scale * 0.8;
+        // Use a consistent glyph size for all fonts
+        let display_size = scale * 0.6;
+        let margin = scale * 0.15;
 
-        let offset = scale * 0.12;
+        let left = rect.min.x + margin;
+        let right = rect.max.x - margin;
 
-        let left = rect.min.x + offset;
-        let top = rect.min.y + offset;
+        // Calculate vertical center for glyph display
+        let vertical_center = rect.min.y + rect.height() * 0.5;
 
-        let right = rect.max.x - offset;
-        let _bottom = rect.max.y - offset;
+        // Try to get metrics from the actual font that will render the character
+        let font_bytes =
+            if self.selected_char as u32 >= 0x1F300 && self.selected_char as u32 <= 0x1F6FF {
+                &NOTO_EMOJI_FONT[..]
+            } else if self.selected_char as u32 >= 0x2600 && self.selected_char as u32 <= 0x27BF {
+                &NOTO_SYMBOLS_FONT[..]
+            } else if self.selected_char as u32 >= 0x1D100 && self.selected_char as u32 <= 0x1D1FF {
+                &NOTO_MUSIC_FONT[..]
+            } else {
+                &NOTO_SANS_FONT[..]
+            };
 
-        let font = rusttype::Font::try_from_bytes(&NOTO_SANS_FONT).unwrap();
+        let font = rusttype::Font::try_from_bytes(font_bytes).unwrap();
+        let v_metrics = font.v_metrics(rusttype::Scale::uniform(display_size));
 
-        let v_metrics = font.v_metrics(rusttype::Scale::uniform(glyph_scale));
+        // Normalize metrics for consistent display
+        let metric_scale = display_size / (v_metrics.ascent - v_metrics.descent).abs();
+        let normalized_ascent = v_metrics.ascent * metric_scale;
+        let normalized_descent = v_metrics.descent * metric_scale;
+
+        // Calculate baseline position
+        let baseline_y = vertical_center + normalized_ascent * 0.3;
 
         let visuals = &ui.ctx().style().visuals;
         let dark_mode = visuals.dark_mode;
@@ -971,43 +1088,72 @@ impl GlyphanaApp {
             egui::Color32::BLACK
         };
 
-        let mut stroke = visuals.widgets.noninteractive.fg_stroke;
-        let info_text_color = stroke.color;
-
-        stroke.color = stroke
-            .color
-            .linear_multiply(info_text_color.r() as f32 / 255.0);
-
+        // Draw the glyph centered on the baseline
         painter.text(
-            egui::Pos2::new(center.x, top + scale + glyph_scale * 0.023),
+            egui::Pos2::new(center.x, baseline_y),
             egui::Align2::CENTER_BOTTOM,
             self.selected_char,
-            egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
+            egui::FontId::new(display_size, egui::FontFamily::Name(NOTO_SANS.into())),
             glyph_color,
         );
 
+        // Style for lines
+        let mut line_stroke = visuals.widgets.noninteractive.fg_stroke;
+        line_stroke.color = line_stroke.color.linear_multiply(0.3);
+        line_stroke.width = 1.0;
+
+        // Style for labels
+        let label_color = visuals.weak_text_color();
+        let label_size = 10.0;
+
+        // Draw ascender line
+        let ascender_y = baseline_y - normalized_ascent;
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + glyph_scale - v_metrics.ascent),
-                egui::Pos2::new(right, top + glyph_scale - v_metrics.ascent),
+                egui::Pos2::new(left, ascender_y),
+                egui::Pos2::new(right, ascender_y),
             ],
-            stroke,
+            line_stroke,
+        );
+        painter.text(
+            egui::Pos2::new(left - 5.0, ascender_y),
+            egui::Align2::RIGHT_CENTER,
+            "ascender",
+            egui::FontId::proportional(label_size),
+            label_color,
         );
 
+        // Draw baseline
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + glyph_scale),
-                egui::Pos2::new(right, top + glyph_scale),
+                egui::Pos2::new(left, baseline_y),
+                egui::Pos2::new(right, baseline_y),
             ],
-            stroke,
+            egui::Stroke::new(line_stroke.width * 1.5, line_stroke.color),
+        );
+        painter.text(
+            egui::Pos2::new(left - 5.0, baseline_y),
+            egui::Align2::RIGHT_CENTER,
+            "baseline",
+            egui::FontId::proportional(label_size),
+            label_color,
         );
 
+        // Draw descender line
+        let descender_y = baseline_y - normalized_descent;
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + glyph_scale - v_metrics.descent),
-                egui::Pos2::new(right, top + glyph_scale - v_metrics.descent),
+                egui::Pos2::new(left, descender_y),
+                egui::Pos2::new(right, descender_y),
             ],
-            stroke,
+            line_stroke,
+        );
+        painter.text(
+            egui::Pos2::new(left - 5.0, descender_y),
+            egui::Align2::RIGHT_CENTER,
+            "descender",
+            egui::FontId::proportional(label_size),
+            label_color,
         );
 
         ui.expand_to_include_rect(painter.clip_rect());
@@ -1021,8 +1167,8 @@ fn available_characters(ui: &egui::Ui, family: egui::FontFamily) -> BTreeMap<cha
             .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
             .characters()
             .iter()
-            .filter(|chr| !chr.is_whitespace() && !chr.is_ascii_control())
-            .map(|&chr| (chr, char_name(chr)))
+            .filter(|(chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
+            .map(|(&chr, _)| (chr, char_name(chr)))
             .collect()
     })
 }
