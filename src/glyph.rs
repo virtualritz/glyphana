@@ -1,13 +1,80 @@
+use glyph_names;
 use std::collections::BTreeMap;
+use unicode_case_mapping;
+
+// Helper functions to convert unicode-case-mapping results to strings
+fn to_lowercase_string(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let mapped = unicode_case_mapping::to_lowercase(c);
+            let mut result = String::new();
+            for &code in &mapped {
+                if code != 0 {
+                    if let Some(ch) = char::from_u32(code) {
+                        result.push(ch);
+                    }
+                }
+            }
+            if result.is_empty() {
+                result.push(c); // Maps to itself
+            }
+            result
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn to_uppercase_string(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let mapped = unicode_case_mapping::to_uppercase(c);
+            let mut result = String::new();
+            for &code in &mapped {
+                if code != 0 {
+                    if let Some(ch) = char::from_u32(code) {
+                        result.push(ch);
+                    }
+                }
+            }
+            if result.is_empty() {
+                result.push(c); // Maps to itself
+            }
+            result
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
 
 pub fn char_name(chr: char) -> String {
+    // Try special/hardcoded names first
     if let Some(name) = special_char_name(chr) {
-        name.to_string()
-    } else if let Some(name) = unicode_names2::name(chr) {
-        title_case(&name.to_string())
-    } else {
-        format!("U+{:04X}", chr as u32)
+        return name.to_string();
     }
+
+    // Try Unicode names
+    if let Some(name) = unicode_names2::name(chr) {
+        return title_case(&name.to_string());
+    }
+
+    // Try Adobe glyph names as fallback
+    if let Some(adobe_name) = glyph_names::glyph_name(chr as u32) {
+        // Adobe names are typically camelCase, convert to title case with spaces
+        let spaced = adobe_name
+            .chars()
+            .enumerate()
+            .flat_map(|(i, c)| {
+                if i > 0 && c.is_uppercase() {
+                    vec![' ', c]
+                } else {
+                    vec![c]
+                }
+            })
+            .collect::<String>();
+        return title_case(&spaced);
+    }
+
+    // Default to Unicode code point
+    format!("U+{:04X}", chr as u32)
 }
 
 pub fn special_char_name(chr: char) -> Option<&'static str> {
@@ -118,7 +185,12 @@ fn capitalize(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         None => String::new(),
-        Some(c) => c.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+        Some(c) => {
+            // Use unicode_case_mapping for proper case conversion
+            let upper = to_uppercase_string(&c.to_string());
+            let rest = to_lowercase_string(chars.as_str());
+            upper + &rest
+        }
     }
 }
 
@@ -126,12 +198,12 @@ fn title_case(s: &str) -> String {
     s.split_whitespace()
         .map(|word| {
             if word.len() <= 3 && word != "And" {
-                word.to_lowercase()
+                to_lowercase_string(word)
             } else {
                 capitalize(word)
             }
         })
-        .collect::<Vec<String>>()
+        .collect::<Vec<_>>()
         .join(" ")
 }
 

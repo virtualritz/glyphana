@@ -1,6 +1,70 @@
 use crate::categories::{Category, CharacterInspector};
+use glyph_names;
 use std::collections::BTreeMap;
 use stringzilla::StringZilla;
+use unicode_case_mapping;
+use unicode_normalization::UnicodeNormalization;
+use unicode_skeleton::UnicodeSkeleton;
+
+// Helper function to normalize text for accent-insensitive matching
+fn normalize_for_matching(s: &str) -> String {
+    // First decompose Unicode characters (NFD normalization)
+    // This separates base characters from their combining marks (accents)
+    let decomposed: String = s.nfd().collect();
+
+    // Remove combining marks (accents, diacritics)
+    let without_accents: String = decomposed
+        .chars()
+        .filter(|&c| {
+            // Keep base characters, remove combining marks
+            // Combining marks are in the ranges:
+            // U+0300–U+036F (Combining Diacritical Marks)
+            // U+1AB0–U+1AFF (Combining Diacritical Marks Extended)
+            // U+1DC0–U+1DFF (Combining Diacritical Marks Supplement)
+            // U+20D0–U+20FF (Combining Diacritical Marks for Symbols)
+            // U+FE20–U+FE2F (Combining Half Marks)
+            let code = c as u32;
+            !((0x0300..=0x036F).contains(&code)
+                || (0x1AB0..=0x1AFF).contains(&code)
+                || (0x1DC0..=0x1DFF).contains(&code)
+                || (0x20D0..=0x20FF).contains(&code)
+                || (0xFE20..=0xFE2F).contains(&code))
+        })
+        .collect();
+
+    // Also try unicode_skeleton for additional normalization
+    // This handles more complex character variants
+    let skeleton = without_accents.skeleton_chars().collect::<String>();
+
+    // Return the most normalized form
+    if !skeleton.is_empty() {
+        skeleton
+    } else {
+        without_accents
+    }
+}
+
+// Helper functions to convert unicode-case-mapping results to strings
+fn to_lowercase_string(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let mapped = unicode_case_mapping::to_lowercase(c);
+            let mut result = String::new();
+            for &code in &mapped {
+                if code != 0 {
+                    if let Some(ch) = char::from_u32(code) {
+                        result.push(ch);
+                    }
+                }
+            }
+            if result.is_empty() {
+                result.push(c); // Maps to itself
+            }
+            result
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
 
 pub struct SearchParams {
     pub text: String,
@@ -20,7 +84,7 @@ impl SearchParams {
     ) -> Self {
         let split_text: Vec<String> = text.split_whitespace().map(str::to_string).collect();
         let split_text_lower: Vec<String> = if !case_sensitive {
-            split_text.iter().map(|s| s.to_lowercase()).collect()
+            split_text.iter().map(|s| to_lowercase_string(s)).collect()
         } else {
             vec![]
         };
@@ -129,7 +193,7 @@ impl SearchEngine {
     }
 
     fn parse_hex_code(text: &str) -> Option<char> {
-        let cleaned = text.trim().to_lowercase();
+        let cleaned = to_lowercase_string(text.trim());
 
         // Try U+XXXX format
         if let Some(hex) = cleaned.strip_prefix("u+") {
@@ -203,16 +267,35 @@ impl SearchEngine {
                     if chr_str.contains(&params.text) {
                         return true;
                     }
-                } else if chr_str.to_lowercase().contains(&params.text.to_lowercase()) {
-                    return true;
+                } else {
+                    // Try case-insensitive match
+                    if to_lowercase_string(&chr_str).contains(&to_lowercase_string(&params.text)) {
+                        return true;
+                    }
+
+                    // Try accent-insensitive match (e.g., 'a' matches 'à', 'á', 'â', etc.)
+                    let normalized_char = normalize_for_matching(&chr_str);
+                    let normalized_search = normalize_for_matching(&params.text);
+                    if normalized_char.contains(&normalized_search) {
+                        return true;
+                    }
                 }
 
-                // Check name
+                // Check name (Unicode and Adobe)
                 let search_name = if params.case_sensitive {
                     name.clone()
                 } else {
-                    name.to_lowercase()
+                    to_lowercase_string(name)
                 };
+
+                // Also get Adobe glyph name if available
+                let adobe_name = glyph_names::glyph_name(*chr as u32).map(|n| {
+                    if params.case_sensitive {
+                        n.to_string()
+                    } else {
+                        to_lowercase_string(&n)
+                    }
+                });
 
                 let search_terms = if params.case_sensitive {
                     &params.split_text
@@ -222,9 +305,29 @@ impl SearchEngine {
 
                 // Check if all search terms match with fuzzy logic
                 search_terms.iter().all(|term| {
-                    // First try exact substring match anywhere in the name
+                    // First try exact substring match anywhere in the Unicode name
                     if search_name.contains(term) {
                         return true;
+                    }
+
+                    // Try accent-insensitive matching by normalizing both strings
+                    let normalized_name = normalize_for_matching(&search_name);
+                    let normalized_term = normalize_for_matching(term);
+                    if normalized_name.contains(&normalized_term) {
+                        return true;
+                    }
+
+                    // Also check Adobe glyph name
+                    if let Some(ref an) = adobe_name {
+                        if an.contains(term) {
+                            return true;
+                        }
+
+                        // Try accent-insensitive matching on Adobe name too
+                        let normalized_adobe = normalize_for_matching(an);
+                        if normalized_adobe.contains(&normalized_term) {
+                            return true;
+                        }
                     }
 
                     // Then try fuzzy match on individual words
@@ -240,7 +343,7 @@ impl SearchEngine {
                             if params.case_sensitive && distance > 0 {
                                 // If they're the same when lowercased, it's just a case difference
                                 // which shouldn't match in case-sensitive mode
-                                if word.to_lowercase() == term.to_lowercase() {
+                                if to_lowercase_string(word) == to_lowercase_string(term) {
                                     false
                                 } else {
                                     distance <= MAX_EDIT_DISTANCE
@@ -273,7 +376,15 @@ impl SearchEngine {
                 let char_matches = if params.case_sensitive {
                     chr_str.contains(&params.text)
                 } else {
-                    chr_str.to_lowercase().contains(&params.text.to_lowercase())
+                    // Case-insensitive match
+                    let case_match =
+                        to_lowercase_string(&chr_str).contains(&to_lowercase_string(&params.text));
+
+                    // Accent-insensitive match
+                    let accent_match = normalize_for_matching(&chr_str)
+                        .contains(&normalize_for_matching(&params.text));
+
+                    case_match || accent_match
                 };
 
                 // Check name match if enabled
@@ -281,7 +392,15 @@ impl SearchEngine {
                     if params.case_sensitive {
                         name.contains(&params.text)
                     } else {
-                        name.to_lowercase().contains(&params.text.to_lowercase())
+                        // Case-insensitive match
+                        let case_match =
+                            to_lowercase_string(name).contains(&to_lowercase_string(&params.text));
+
+                        // Accent-insensitive match
+                        let accent_match = normalize_for_matching(name)
+                            .contains(&normalize_for_matching(&params.text));
+
+                        case_match || accent_match
                     }
                 } else {
                     false

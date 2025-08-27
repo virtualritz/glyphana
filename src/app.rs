@@ -1,8 +1,61 @@
 use ahash::AHashSet as HashSet;
 use egui_dnd::dnd;
+use include_flate::flate;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
+use unicode_case_mapping;
+
+// Helper functions to convert unicode-case-mapping results to strings
+fn to_lowercase_string(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let mapped = unicode_case_mapping::to_lowercase(c);
+            let mut result = String::new();
+            for &code in &mapped {
+                if code != 0 {
+                    if let Some(ch) = char::from_u32(code) {
+                        result.push(ch);
+                    }
+                }
+            }
+            if result.is_empty() {
+                result.push(c); // Maps to itself
+            }
+            result
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+fn to_uppercase_string(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            let mapped = unicode_case_mapping::to_uppercase(c);
+            let mut result = String::new();
+            for &code in &mapped {
+                if code != 0 {
+                    if let Some(ch) = char::from_u32(code) {
+                        result.push(ch);
+                    }
+                }
+            }
+            if result.is_empty() {
+                result.push(c); // Maps to itself
+            }
+            result
+        })
+        .collect::<Vec<_>>()
+        .join("")
+}
+
+// Compressed font data
+flate!(static NOTO_SANS_DATA: [u8] from "assets/NotoSans-Regular.otf");
+flate!(static NOTO_SANS_SYMBOLS_DATA: [u8] from "assets/NotoSansSymbols-Regular.ttf");
+flate!(static NOTO_SANS_SYMBOLS2_DATA: [u8] from "assets/NotoSansSymbols2-Regular.ttf");
+flate!(static NOTO_SANS_MATH_DATA: [u8] from "assets/NotoSansMath-Regular.ttf");
+flate!(static NOTO_MUSIC_DATA: [u8] from "assets/NotoMusic-Regular.ttf");
+flate!(static NOTO_EMOJI_DATA: [u8] from "assets/NotoEmoji-Regular.ttf");
 
 use crate::categories::{
     Category, CharacterInspector, UnicodeCategory, UnicodeCollection, create_default_categories,
@@ -106,7 +159,7 @@ impl GlyphanaApp {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
             // Re-initialize categories after deserialization
             for category in &mut app.categories {
-                category.unicode_category = Self::get_unicode_category_for_name(&category.name);
+                category.unicode_category = Self::unicode_category_for_name(&category.name);
             }
             app
         } else {
@@ -114,9 +167,31 @@ impl GlyphanaApp {
         }
     }
 
-    fn get_unicode_category_for_name(name: &str) -> UnicodeCategory {
+    fn unicode_category_for_name(name: &str) -> UnicodeCategory {
+        use crate::categories::PropertyType;
+
         // Map category names back to their Unicode categories
         // This is needed for deserialization since we skip the unicode_category field
+
+        // Check property-based categories first
+        match name {
+            "Uppercase Letters" => {
+                return UnicodeCategory::Property(PropertyType::UppercaseLetters);
+            }
+            "Lowercase Letters" => {
+                return UnicodeCategory::Property(PropertyType::LowercaseLetters);
+            }
+            "All Letters" => return UnicodeCategory::Property(PropertyType::AllLetters),
+            "Math Symbols" => return UnicodeCategory::Property(PropertyType::MathSymbols),
+            "Currency Symbols" => return UnicodeCategory::Property(PropertyType::CurrencySymbols),
+            "Punctuation" => return UnicodeCategory::Property(PropertyType::Punctuation),
+            "Decimal Numbers" => return UnicodeCategory::Property(PropertyType::DecimalNumbers),
+            "All Numbers" => return UnicodeCategory::Property(PropertyType::AllNumbers),
+            "All Symbols" => return UnicodeCategory::Property(PropertyType::AllSymbols),
+            _ => {}
+        }
+
+        // Then check special cases
         match name {
             "Emoji" => {
                 use unicode_blocks as ub;
@@ -171,61 +246,47 @@ impl GlyphanaApp {
     fn fonts() -> egui::FontDefinitions {
         let mut fonts = egui::FontDefinitions::default();
 
-        // Add Noto Sans
+        // Add Noto Sans (compressed)
         fonts.font_data.insert(
             NOTO_SANS.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoSans-Regular.otf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_SANS_DATA)),
         );
 
         // Add Noto Sans Mono
         fonts.font_data.insert(
             NOTO_SANS_MONO.to_owned(),
             // NotoSansMono not available, use NotoSans as fallback
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoSans-Regular.otf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_SANS_DATA)),
         );
 
-        // Add Noto Sans Symbols
+        // Add Noto Sans Symbols (compressed)
         fonts.font_data.insert(
             NOTO_SANS_SYMBOLS.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoSansSymbols-Regular.ttf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_SANS_SYMBOLS_DATA)),
         );
 
-        // Add Noto Sans Symbols 2
+        // Add Noto Sans Symbols 2 (large file - 1.2M, compressed)
         fonts.font_data.insert(
             NOTO_SANS_SYMBOLS2.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoSansSymbols2-Regular.ttf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_SANS_SYMBOLS2_DATA)),
         );
 
-        // Add Noto Sans Math
+        // Add Noto Sans Math (compressed)
         fonts.font_data.insert(
             NOTO_SANS_MATH.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoSansMath-Regular.ttf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_SANS_MATH_DATA)),
         );
 
-        // Add Noto Music
+        // Add Noto Music (compressed)
         fonts.font_data.insert(
             NOTO_MUSIC.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoMusic-Regular.ttf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_MUSIC_DATA)),
         );
 
-        // Add Noto Emoji (black and white)
+        // Add Noto Emoji (black and white, compressed)
         fonts.font_data.insert(
             NOTO_EMOJI.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoEmoji-Regular.ttf"
-            ))),
+            Arc::new(egui::FontData::from_static(&NOTO_EMOJI_DATA)),
         );
 
         // Add Emoji Icon font from master
@@ -283,6 +344,33 @@ impl GlyphanaApp {
         fonts
             .families
             .insert(egui::FontFamily::Name(NOTO_EMOJI.into()), emoji_fonts);
+
+        // Register NotoSansMono as a named font family
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_SANS_MONO.into()),
+            vec![NOTO_SANS_MONO.to_owned(), NOTO_SANS.to_owned()],
+        );
+
+        // Register other named font families for font variations
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_SANS_SYMBOLS.into()),
+            vec![NOTO_SANS_SYMBOLS.to_owned(), NOTO_SANS.to_owned()],
+        );
+
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_SANS_SYMBOLS2.into()),
+            vec![NOTO_SANS_SYMBOLS2.to_owned(), NOTO_SANS.to_owned()],
+        );
+
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_SANS_MATH.into()),
+            vec![NOTO_SANS_MATH.to_owned(), NOTO_SANS.to_owned()],
+        );
+
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_MUSIC.into()),
+            vec![NOTO_MUSIC.to_owned(), NOTO_SANS.to_owned()],
+        );
 
         fonts
     }
@@ -505,19 +593,35 @@ impl GlyphanaApp {
     }
 
     // Get related characters for a given character
-    fn get_related_characters(&self, ch: char) -> Vec<char> {
+    fn related_characters(&self, ch: char) -> Vec<char> {
         let mut related = Vec::new();
         let code_point = ch as u32;
 
-        // Add case variations
+        // First, get all characters that normalize to the same skeleton
+        // This will find accent variants, case variants, etc.
+        let base_skeleton = self.normalize_char_for_matching(ch);
+
+        // Search through available characters to find matches
+        for &other_char in self.full_glyph_cache.keys() {
+            if other_char != ch {
+                let other_skeleton = self.normalize_char_for_matching(other_char);
+                if !base_skeleton.is_empty() && base_skeleton == other_skeleton {
+                    related.push(other_char);
+                }
+            }
+        }
+
+        // Add case variations using proper Unicode case mapping
         if ch.is_lowercase() {
-            for upper in ch.to_uppercase() {
+            let upper_str = to_uppercase_string(&ch.to_string());
+            for upper in upper_str.chars() {
                 if upper != ch {
                     related.push(upper);
                 }
             }
         } else if ch.is_uppercase() {
-            for lower in ch.to_lowercase() {
+            let lower_str = to_lowercase_string(&ch.to_string());
+            for lower in lower_str.chars() {
                 if lower != ch {
                     related.push(lower);
                 }
@@ -542,7 +646,10 @@ impl GlyphanaApp {
 
         // Add diacritic variations for Latin characters
         if ch.is_ascii_alphabetic() {
-            let base_char = ch.to_ascii_lowercase();
+            let base_char = to_lowercase_string(&ch.to_string())
+                .chars()
+                .next()
+                .unwrap_or(ch);
             let diacritic_variations: Vec<(char, Vec<char>)> = vec![
                 ('a', vec!['à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą']),
                 ('e', vec!['è', 'é', 'ê', 'ë', 'ē', 'ė', 'ę', 'ě']),
@@ -567,51 +674,94 @@ impl GlyphanaApp {
             }
         }
 
-        // Limit to first 12 related characters for UI space
-        related.truncate(12);
+        // Sort by Unicode proximity to the original character
+        let char_code = ch as i64;
+        related.sort_by_key(|&c| (c as i64 - char_code).abs());
+
+        // Limit to first 24 related characters (increased from 12)
+        related.truncate(24);
         related
     }
 
+    // Helper function to normalize a character for matching
+    fn normalize_char_for_matching(&self, ch: char) -> String {
+        use unicode_normalization::UnicodeNormalization;
+        use unicode_skeleton::UnicodeSkeleton;
+
+        let s = ch.to_string();
+
+        // First decompose Unicode characters (NFD normalization)
+        let decomposed: String = s.nfd().collect();
+
+        // Remove combining marks (accents, diacritics)
+        let without_accents: String = decomposed
+            .chars()
+            .filter(|&c| {
+                let code = c as u32;
+                !((0x0300..=0x036F).contains(&code)
+                    || (0x1AB0..=0x1AFF).contains(&code)
+                    || (0x1DC0..=0x1DFF).contains(&code)
+                    || (0x20D0..=0x20FF).contains(&code)
+                    || (0xFE20..=0xFE2F).contains(&code))
+            })
+            .collect();
+
+        // Use lowercase for case-insensitive matching
+        let lowercase = to_lowercase_string(&without_accents);
+
+        // Try unicode_skeleton for additional normalization
+        let skeleton = lowercase.skeleton_chars().collect::<String>();
+
+        if !skeleton.is_empty() {
+            skeleton
+        } else {
+            lowercase
+        }
+    }
+
     // Get available fonts that have the character
-    fn get_font_variations(&self, ch: char) -> Vec<(&'static str, egui::FontFamily)> {
-        let mut fonts = Vec::new();
-
-        // Check which fonts can display this character
-        fonts.push((NOTO_SANS, egui::FontFamily::Name(NOTO_SANS.into())));
-
-        // Add symbol fonts for symbol characters
-        if ch as u32 >= 0x2000 {
-            fonts.push((
+    fn font_variations(
+        &self,
+        ch: char,
+        ctx: &egui::Context,
+    ) -> Vec<(&'static str, egui::FontFamily)> {
+        // List all available fonts
+        let all_fonts = [
+            (NOTO_SANS, egui::FontFamily::Name(NOTO_SANS.into())),
+            (
+                NOTO_SANS_MONO,
+                egui::FontFamily::Name(NOTO_SANS_MONO.into()),
+            ),
+            (
                 NOTO_SANS_SYMBOLS,
                 egui::FontFamily::Name(NOTO_SANS_SYMBOLS.into()),
-            ));
-            fonts.push((
+            ),
+            (
                 NOTO_SANS_SYMBOLS2,
                 egui::FontFamily::Name(NOTO_SANS_SYMBOLS2.into()),
-            ));
-        }
-
-        // Add math font for mathematical symbols
-        if (ch as u32 >= 0x2200 && ch as u32 <= 0x22FF)
-            || (ch as u32 >= 0x2100 && ch as u32 <= 0x214F)
-        {
-            fonts.push((
+            ),
+            (
                 NOTO_SANS_MATH,
                 egui::FontFamily::Name(NOTO_SANS_MATH.into()),
-            ));
-        }
+            ),
+            (NOTO_MUSIC, egui::FontFamily::Name(NOTO_MUSIC.into())),
+            (NOTO_EMOJI, egui::FontFamily::Name(NOTO_EMOJI.into())),
+        ];
 
-        // Add music font for musical symbols
-        if ch as u32 >= 0x1D100 && ch as u32 <= 0x1D1FF {
-            fonts.push((NOTO_MUSIC, egui::FontFamily::Name(NOTO_MUSIC.into())));
-        }
-
-        // Add emoji font for emoji characters
-        if ch as u32 >= 0x1F300 || (ch as u32 >= 0x2600 && ch as u32 <= 0x27BF) {
-            fonts.push((NOTO_EMOJI, egui::FontFamily::Name(NOTO_EMOJI.into())));
-        }
-
-        fonts
+        // Filter fonts that actually contain this character
+        all_fonts
+            .into_iter()
+            .filter(|(_, font_family)| {
+                // Check if the font contains this character by querying the font system
+                ctx.fonts(|f| {
+                    let mut fonts_lock = f.lock();
+                    let font = fonts_lock
+                        .fonts
+                        .font(&egui::FontId::new(20.0, font_family.clone()));
+                    font.characters().contains_key(&ch)
+                })
+            })
+            .collect()
     }
 
     fn render_right_panel(&mut self, ctx: &egui::Context) {
@@ -636,16 +786,25 @@ impl GlyphanaApp {
                         ui.heading(self.selected_char.to_string());
 
                         let name = char_name(self.selected_char);
-                        ui.label(&name);
+
+                        // Wrap long names to fit the panel width
+                        let available_width = ui.available_width();
+                        let char_width = 8.0; // Approximate character width in pixels
+                        let max_chars = (available_width / char_width).max(20.0) as usize;
+
+                        let wrapped_name = textwrap::wrap(&name, max_chars);
+                        for line in wrapped_name {
+                            ui.label(line.to_string());
+                        }
 
                         ui.separator();
 
-                        // Unicode codepoint
+                        // Unicode codepoint - use egui's striped grid
                         egui::Grid::new("glyph_codepoints")
                             .num_columns(2)
                             .striped(true)
                             .show(ui, |ui| {
-                                ui.label("Unicode:");
+                                ui.label("Unicode");
                                 let unicode_string = format!("U+{:04X}", self.selected_char as u32);
                                 if ui
                                     .button(egui::RichText::new(&unicode_string).monospace())
@@ -656,7 +815,7 @@ impl GlyphanaApp {
                                 }
                                 ui.end_row();
 
-                                ui.label("Decimal:");
+                                ui.label("Decimal");
                                 let decimal_string = format!("{}", self.selected_char as u32);
                                 if ui
                                     .button(egui::RichText::new(&decimal_string).monospace())
@@ -667,7 +826,7 @@ impl GlyphanaApp {
                                 }
                                 ui.end_row();
 
-                                ui.label("HTML:");
+                                ui.label("HTML");
                                 let html_string = format!("&#x{:04X};", self.selected_char as u32);
                                 if ui
                                     .button(egui::RichText::new(&html_string).monospace())
@@ -676,7 +835,6 @@ impl GlyphanaApp {
                                 {
                                     ui.ctx().copy_text(html_string);
                                 }
-                                ui.end_row();
                             });
 
                         ui.separator();
@@ -738,131 +896,161 @@ impl GlyphanaApp {
     }
 
     fn render_related_characters(&mut self, ui: &mut egui::Ui) {
-        let related_chars = self.get_related_characters(self.selected_char);
+        let related_chars = self.related_characters(self.selected_char);
 
         if related_chars.is_empty() {
             ui.label("No related characters found");
         } else {
-            // Create a grid for related characters
-            let columns = 3;
-            let button_size = ui.available_width() / columns as f32 - ui.spacing().item_spacing.x;
-
-            egui::Grid::new("related_chars_grid")
-                .num_columns(columns)
-                .spacing([ui.spacing().item_spacing.x, ui.spacing().item_spacing.y])
+            // Add scrolling support for the related characters
+            egui::ScrollArea::vertical()
+                .max_height(ui.available_height()) // Use remaining height
                 .show(ui, |ui| {
-                    for (i, &ch) in related_chars.iter().enumerate() {
-                        let response = ui.allocate_response(
-                            egui::Vec2::splat(button_size),
-                            egui::Sense::click(),
-                        );
+                    // Create a grid for related characters
+                    let columns = 3;
+                    let button_size =
+                        ui.available_width() / columns as f32 - ui.spacing().item_spacing.x;
 
-                        let rect = response.rect;
-                        let painter = ui.painter();
+                    egui::Grid::new("related_chars_grid")
+                        .num_columns(columns)
+                        .spacing([ui.spacing().item_spacing.x, ui.spacing().item_spacing.y])
+                        .show(ui, |ui| {
+                            for (i, &ch) in related_chars.iter().enumerate() {
+                                let response = ui.allocate_response(
+                                    egui::Vec2::splat(button_size),
+                                    egui::Sense::click(),
+                                );
 
-                        // Draw background
-                        let bg_color = if response.hovered() {
-                            ui.visuals().widgets.hovered.bg_fill
-                        } else {
-                            ui.visuals().extreme_bg_color
-                        };
-                        painter.rect_filled(rect, 4.0, bg_color);
+                                let rect = response.rect;
+                                let painter = ui.painter();
+                                let is_in_collection = self.collection.contains(&ch);
 
-                        // Draw character
-                        painter.text(
-                            rect.center(),
-                            egui::Align2::CENTER_CENTER,
-                            ch,
-                            egui::FontId::new(24.0, egui::FontFamily::Name(NOTO_SANS.into())),
-                            ui.visuals().text_color(),
-                        );
+                                // Draw background matching main grid style
+                                painter.rect_filled(
+                                    rect,
+                                    2.0,
+                                    if is_in_collection {
+                                        egui::Color32::from_rgb(40, 60, 40)
+                                    } else {
+                                        egui::Color32::from_rgb(30, 30, 30)
+                                    },
+                                );
 
-                        // Draw character code below
-                        let code_text = format!("U+{:04X}", ch as u32);
-                        painter.text(
-                            rect.center() + egui::Vec2::new(0.0, button_size * 0.3),
-                            egui::Align2::CENTER_CENTER,
-                            code_text,
-                            egui::FontId::new(9.0, egui::FontFamily::Monospace),
-                            ui.visuals().weak_text_color(),
-                        );
+                                // Draw character
+                                painter.text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    ch,
+                                    egui::FontId::new(
+                                        24.0,
+                                        egui::FontFamily::Name(NOTO_SANS.into()),
+                                    ),
+                                    ui.visuals().text_color(),
+                                );
 
-                        // Handle click
-                        if response.clicked() {
-                            self.selected_char = ch;
-                            self.add_to_recently_used(ch);
-                        }
+                                // Draw character code below
+                                let code_text = format!("U+{:04X}", ch as u32);
+                                painter.text(
+                                    rect.center() + egui::Vec2::new(0.0, button_size * 0.3),
+                                    egui::Align2::CENTER_CENTER,
+                                    code_text,
+                                    egui::FontId::new(9.0, egui::FontFamily::Monospace),
+                                    ui.visuals().weak_text_color(),
+                                );
 
-                        // Show tooltip
-                        if response.hovered() {
-                            response.on_hover_text(format!(
-                                "{}\nU+{:04X}\nClick to select",
-                                char_name(ch),
-                                ch as u32
-                            ));
-                        }
+                                // Handle click
+                                if response.clicked() {
+                                    self.selected_char = ch;
+                                    self.add_to_recently_used(ch);
+                                }
 
-                        // End row every 3 characters
-                        if (i + 1) % columns == 0 && i < related_chars.len() - 1 {
-                            ui.end_row();
-                        }
-                    }
+                                // Show tooltip
+                                if response.hovered() {
+                                    response.on_hover_text(format!(
+                                        "{}\nU+{:04X}\nClick to select",
+                                        char_name(ch),
+                                        ch as u32
+                                    ));
+                                }
+
+                                // End row every 3 characters
+                                if (i + 1) % columns == 0 && i < related_chars.len() - 1 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
                 });
         }
     }
 
     fn render_font_variations(&mut self, ui: &mut egui::Ui) {
-        let fonts = self.get_font_variations(self.selected_char);
+        let fonts = self.font_variations(self.selected_char, ui.ctx());
 
-        egui::ScrollArea::vertical()
-            .max_height(ui.available_height())
-            .show(ui, |ui| {
-                for (font_name, font_family) in fonts {
-                    ui.horizontal(|ui| {
-                        // Show font name label
-                        ui.label(
-                            egui::RichText::new(font_name)
-                                .size(10.0)
-                                .color(ui.visuals().weak_text_color()),
-                        );
-                    });
+        if fonts.is_empty() {
+            ui.label("No font variations available");
+        } else {
+            egui::ScrollArea::vertical()
+                .max_height(ui.available_height())
+                .show(ui, |ui| {
+                    // Create a grid for font variations
+                    let columns = 2;
+                    let button_size =
+                        ui.available_width() / columns as f32 - ui.spacing().item_spacing.x;
 
-                    // Draw the character in this font
-                    let response = ui.allocate_response(
-                        egui::Vec2::new(ui.available_width(), 40.0),
-                        egui::Sense::click(),
-                    );
+                    egui::Grid::new("font_variations_grid")
+                        .num_columns(columns)
+                        .spacing([ui.spacing().item_spacing.x, ui.spacing().item_spacing.y])
+                        .show(ui, |ui| {
+                            let font_count = fonts.len();
+                            for (i, (font_name, font_family)) in fonts.into_iter().enumerate() {
+                                let response = ui.allocate_response(
+                                    egui::Vec2::splat(button_size),
+                                    egui::Sense::click(),
+                                );
 
-                    let rect = response.rect;
-                    let painter = ui.painter();
+                                let rect = response.rect;
+                                let painter = ui.painter();
 
-                    // Draw background
-                    let bg_color = if response.hovered() {
-                        ui.visuals().widgets.hovered.bg_fill
-                    } else {
-                        ui.visuals().extreme_bg_color
-                    };
-                    painter.rect_filled(rect, 4.0, bg_color);
+                                // Draw background matching main grid style
+                                painter.rect_filled(rect, 2.0, egui::Color32::from_rgb(30, 30, 30));
 
-                    // Draw the character
-                    painter.text(
-                        rect.center(),
-                        egui::Align2::CENTER_CENTER,
-                        self.selected_char,
-                        egui::FontId::new(28.0, font_family.clone()),
-                        ui.visuals().text_color(),
-                    );
+                                // Draw character
+                                painter.text(
+                                    rect.center(),
+                                    egui::Align2::CENTER_CENTER,
+                                    self.selected_char,
+                                    egui::FontId::new(24.0, font_family.clone()),
+                                    ui.visuals().text_color(),
+                                );
 
-                    // Copy on click
-                    if response.clicked() {
-                        ui.ctx().copy_text(self.selected_char.to_string());
-                    }
+                                // Draw font name below
+                                painter.text(
+                                    rect.center() + egui::Vec2::new(0.0, button_size * 0.3),
+                                    egui::Align2::CENTER_CENTER,
+                                    font_name,
+                                    egui::FontId::new(9.0, egui::FontFamily::Proportional),
+                                    ui.visuals().weak_text_color(),
+                                );
 
-                    response.on_hover_text("Click to copy character");
+                                // Handle click
+                                if response.clicked() {
+                                    ui.ctx().copy_text(self.selected_char.to_string());
+                                }
 
-                    ui.separator();
-                }
-            });
+                                // Show tooltip
+                                response.on_hover_text(format!(
+                                    "{}\n{}\nClick to copy",
+                                    font_name,
+                                    char_name(self.selected_char)
+                                ));
+
+                                // End row every 2 fonts
+                                if (i + 1) % columns == 0 && i < font_count - 1 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                });
+        }
     }
 
     fn render_central_panel(&mut self, ctx: &egui::Context) {
@@ -1019,7 +1207,7 @@ impl GlyphanaApp {
     }
 
     fn render_glyph_grid(&mut self, ui: &mut egui::Ui) {
-        let glyphs_to_show = self.get_glyphs_to_show();
+        let glyphs_to_show = self.glyphs_to_show();
 
         if glyphs_to_show.is_empty() {
             ui.centered_and_justified(|ui| {
@@ -1057,6 +1245,7 @@ impl GlyphanaApp {
                     let rect = response.rect;
                     let is_in_collection = self.collection.contains(&chr);
 
+                    // Simple background without hover (original fast rendering)
                     ui.painter().rect_filled(
                         rect,
                         2.0,
@@ -1098,7 +1287,7 @@ impl GlyphanaApp {
         });
     }
 
-    fn get_glyphs_to_show(&self) -> Vec<(char, String)> {
+    fn glyphs_to_show(&self) -> Vec<(char, String)> {
         if self.selected_category == recently_used_id() {
             self.recently_used
                 .iter()
@@ -1168,7 +1357,7 @@ impl GlyphanaApp {
         self.split_search_text_lower = if !self.case_sensitive {
             self.split_search_text
                 .iter()
-                .map(|s| s.to_lowercase())
+                .map(|s| to_lowercase_string(s))
                 .collect()
         } else {
             vec![]
@@ -1260,66 +1449,65 @@ impl GlyphanaApp {
             egui::FontFamily::Name(NOTO_SANS.into())
         };
 
+        // Calculate baseline position
+        let baseline_y = top + glyph_scale;
+
+        // Draw the character - position it so most characters sit on baseline
         painter.text(
-            egui::Pos2::new(center.x, top + scale + glyph_scale * 0.023),
-            egui::Align2::CENTER_BOTTOM,
+            egui::Pos2::new(center.x, baseline_y - glyph_scale * 0.39),
+            egui::Align2::CENTER_CENTER,
             self.selected_char,
             egui::FontId::new(glyph_scale, font_family),
             glyph_color,
         );
 
+        // Get character width (approximate for now)
+        let char_width = glyph_scale * 0.6; // Approximate width
+        let char_left = center.x - char_width / 2.0;
+        let char_right = center.x + char_width / 2.0;
+
         // Draw ascender line
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + glyph_scale - v_metrics.ascent),
-                egui::Pos2::new(right, top + glyph_scale - v_metrics.ascent),
+                egui::Pos2::new(left, baseline_y - v_metrics.ascent),
+                egui::Pos2::new(right, baseline_y - v_metrics.ascent),
             ],
             stroke,
-        );
-
-        // Label for ascender
-        painter.text(
-            egui::Pos2::new(left - 5.0, top + glyph_scale - v_metrics.ascent),
-            egui::Align2::RIGHT_CENTER,
-            "ascender",
-            egui::FontId::new(10.0, egui::FontFamily::Proportional),
-            stroke.color,
         );
 
         // Draw baseline
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + glyph_scale),
-                egui::Pos2::new(right, top + glyph_scale),
+                egui::Pos2::new(left, baseline_y),
+                egui::Pos2::new(right, baseline_y),
             ],
             stroke,
-        );
-
-        // Label for baseline
-        painter.text(
-            egui::Pos2::new(left - 5.0, top + glyph_scale),
-            egui::Align2::RIGHT_CENTER,
-            "baseline",
-            egui::FontId::new(10.0, egui::FontFamily::Proportional),
-            stroke.color,
         );
 
         // Draw descender line
         painter.line_segment(
             [
-                egui::Pos2::new(left, top + glyph_scale - v_metrics.descent),
-                egui::Pos2::new(right, top + glyph_scale - v_metrics.descent),
+                egui::Pos2::new(left, baseline_y - v_metrics.descent),
+                egui::Pos2::new(right, baseline_y - v_metrics.descent),
             ],
             stroke,
         );
 
-        // Label for descender
-        painter.text(
-            egui::Pos2::new(left - 5.0, top + glyph_scale - v_metrics.descent),
-            egui::Align2::RIGHT_CENTER,
-            "descender",
-            egui::FontId::new(10.0, egui::FontFamily::Proportional),
-            stroke.color,
+        // Draw vertical lines for character width
+        painter.line_segment(
+            [
+                egui::Pos2::new(char_left, baseline_y - v_metrics.ascent),
+                egui::Pos2::new(char_left, baseline_y - v_metrics.descent),
+            ],
+            stroke,
+        );
+
+        painter.line_segment(
+            [
+                egui::Pos2::new(char_right, baseline_y - v_metrics.ascent),
+                egui::Pos2::new(char_right, baseline_y - v_metrics.descent),
+            ],
+            stroke,
         );
 
         ui.expand_to_include_rect(painter.clip_rect());
