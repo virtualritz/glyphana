@@ -2,10 +2,18 @@
 name = "glyphana"
 version = "0.1.3"
 authors = ["Moritz Moeller <virtualritz@gmail.com>"]
-edition = "2021"
+edition = "2024"
 description = "Quickly find, inspect & collect unicode glyps"
-rust-version = "1.69"
+rust-version = "1.85"
 license = "(MIT OR Apache-2.0 OR BSD-3-Clause) AND OFL-1.1"
+
+[lib]
+name = "glyphana"
+path = "src/lib.rs"
+
+[[bin]]
+name = "glyphana"
+path = "src/main.rs"
 
 [dependencies]
 ahash = "0.8.12"

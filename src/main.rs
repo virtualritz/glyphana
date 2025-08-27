@@ -1,54 +1,16 @@
 #![warn(clippy::all)]
-#![allow(clippy::blocks_in_conditions)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
-use image::ImageDecoder;
-use include_flate::flate;
 use std::error::Error;
 
-mod app;
-pub use app::GlyphanaApp;
-
-pub const CANCELLATION: char = '🗙';
-pub const COG_WHEEL: char = '⚙';
-pub const HAMBURGER: char = '☰';
-pub const MAGNIFIER: char = '🔍';
-pub const NAME_BADGE: char = '📛';
-pub const SUBSET: char = '⊂';
-
-pub const NOTO_SANS: &str = "noto-sans";
-flate!(pub static NOTO_SANS_FONT: [u8] from "assets/NotoSans-Regular.otf");
-
-pub const NOTO_SANS_MATH: &str = "noto-sans-math";
-flate!(pub static NOTO_SANS_MATH_FONT: [u8] from "assets/NotoSansMath-Regular.ttf");
-
-/*
-pub const NOTO_COLOR_EMOJI: &'static str = "noto-color-emoji";
-flate!(pub static NOTO_COLOR_EMOJI_FONT: [u8] from "assets/NotoColorEmoji-Regular.ttf");
-*/
-
-pub const NOTO_EMOJI: &str = "noto-emoji";
-flate!(pub static NOTO_EMOJI_FONT: [u8] from "assets/NotoEmoji-Regular.ttf");
-
-pub const NOTO_SYMBOLS: &str = "noto-symbols";
-flate!(pub static NOTO_SYMBOLS_FONT: [u8] from "assets/NotoSansSymbols-Regular.ttf");
-
-pub const NOTO_SYMBOLS2: &str = "noto-symbols2";
-flate!(pub static NOTO_SYMBOLS2_FONT: [u8] from "assets/NotoSansSymbols2-Regular.ttf");
-
-/*
-pub const NOTO_SIGN_WRITING: &str = "noto-sign_writing";
-flate!(pub static NOTO_SIGN_WRITING_FONT: [u8] from "assets/NotoSansSignWriting-Regular.ttf");
-*/
-
-pub const NOTO_MUSIC: &str = "noto-music";
-flate!(pub static NOTO_MUSIC_FONT: [u8] from "assets/NotoMusic-Regular.ttf");
+// Import the library modules
+use glyphana::GlyphanaApp;
 
 fn main() -> Result<(), Box<dyn Error>> {
     // Log to stdout (if you run with `RUST_LOG=debug`).
     tracing_subscriber::fmt::init();
 
-    let icon = load_icon();
+    let icon = load_icon()?;
 
     /* Tray icon stuff: works but no menu messages reach the GlyphanaApp::update()
      * method.
@@ -104,29 +66,31 @@ fn main() -> Result<(), Box<dyn Error>> {
     eframe::run_native(
         "Glyphana",
         native_options,
-        Box::new(|creation_context| Ok(Box::new(crate::GlyphanaApp::new(creation_context)))),
+        Box::new(|creation_context| Ok(Box::new(GlyphanaApp::new(creation_context)))),
     )?;
 
     Ok(())
 }
 
-fn load_icon() -> egui::viewport::IconData {
-    flate!(static ICON: [u8] from "assets/icon-1024.png");
-    let icon: &[u8] = &ICON;
+fn load_icon() -> Result<egui::viewport::IconData, Box<dyn Error>> {
+    let icon_bytes = include_bytes!("../assets/icon-1024.png");
 
     let (icon_rgba, icon_width, icon_height) = {
+        use image::ImageDecoder;
         use std::io::Cursor;
-        let image =
-            image::codecs::png::PngDecoder::new(Cursor::new(icon)).expect("Failed to decode icon");
-        let mut rgba = vec![0; image.total_bytes() as _];
-        let (width, height) = image.dimensions();
-        image.read_image(&mut rgba).unwrap();
+
+        let decoder = image::codecs::png::PngDecoder::new(Cursor::new(icon_bytes))?;
+        let total_bytes = decoder.total_bytes();
+        let mut rgba = vec![0; total_bytes as usize];
+        let (width, height) = decoder.dimensions();
+        decoder.read_image(&mut rgba)?;
         (rgba, width, height)
     };
 
-    egui::viewport::IconData {
+    Ok(egui::viewport::IconData {
         rgba: icon_rgba,
         width: icon_width,
         height: icon_height,
-    }
+    })
 }
+

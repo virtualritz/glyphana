@@ -1,38 +1,22 @@
 use ahash::AHashSet as HashSet;
-use enum_dispatch::enum_dispatch;
-//use log::info;
-use egui_dnd::{dnd, DragDropItem};
-use include_flate::lazy_static;
+use egui_dnd::dnd;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, VecDeque},
-    hash::{Hash, Hasher},
+use std::collections::{BTreeMap, VecDeque};
+
+use crate::categories::{
+    Category, CharacterInspector, UnicodeCategory, UnicodeCollection, create_default_categories,
 };
-use stringzilla::StringZilla;
-use unicode_blocks as ub;
-
-use crate::*;
-
-static RECENTLY_USED: &str = "Recently Used";
-static COLLECTION: &str = "Collection";
-static SEARCH: &str = "Search";
-lazy_static! {
-    static ref RECENTLY_USED_ID: egui::Id = egui::Id::new(RECENTLY_USED);
-    static ref COLLECTION_ID: egui::Id = egui::Id::new(COLLECTION);
-    static ref SEARCH_ID: egui::Id = egui::Id::new(SEARCH);
-}
+use crate::glyph::{GlyphScale, available_characters, char_name};
+use crate::search::{SearchEngine, SearchParams};
+use crate::ui::{COLLECTION, RECENTLY_USED, SEARCH, collection_id, recently_used_id, search_id};
 
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
-#[derive(serde::Deserialize, serde::Serialize)]
-// if we add new fields, give them default values when deserializing old state
+#[derive(Deserialize, Serialize)]
 #[serde(default)]
 pub struct GlyphanaApp {
-    // The category the user selected for inspection.
-    //selected_category: usize;
     // The character the user selected for inspection.
     selected_char: char,
-    // The string the user entered into the search field.
-    // Whether to onlky search in the subsets selected on the left panel.
+    // Whether to only search in the subsets selected on the left panel.
     search_only_categories: bool,
     // Also search the glyph's name.
     search_name: bool,
@@ -63,111 +47,6 @@ pub struct GlyphanaApp {
     glyph_scale: GlyphScale,
 }
 
-#[derive(serde::Deserialize, serde::Serialize, Default)]
-#[serde(default)]
-struct Category {
-    name: String,
-    #[serde(skip)]
-    unicode_category: UnicodeCategory,
-}
-
-impl Category {
-    pub fn new(name: &str, unicode_category: UnicodeCategory) -> Self {
-        Self {
-            name: name.to_string(),
-            unicode_category,
-        }
-    }
-
-    #[allow(dead_code)]
-    pub fn id(&self) -> egui::Id {
-        egui::Id::new(&self.name)
-    }
-}
-
-impl Hash for Category {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state)
-    }
-}
-
-#[enum_dispatch]
-trait CharacterInspector {
-    #[allow(dead_code)]
-    fn characters(&self) -> Vec<char>;
-    fn contains(&self, c: char) -> bool;
-}
-
-impl CharacterInspector for ub::UnicodeBlock {
-    fn characters(&self) -> Vec<char> {
-        (self.start()..self.end() + 1)
-            .filter_map(char::from_u32)
-            .collect()
-    }
-
-    fn contains(&self, c: char) -> bool {
-        self.contains(c)
-    }
-}
-
-struct UnicodeMultiBlock(Vec<ub::UnicodeBlock>);
-
-impl CharacterInspector for UnicodeMultiBlock {
-    fn characters(&self) -> Vec<char> {
-        self.0
-            .iter()
-            .flat_map(|block| (block.start()..block.end() + 1).filter_map(char::from_u32))
-            .collect()
-    }
-
-    fn contains(&self, c: char) -> bool {
-        self.0.iter().any(|block| block.contains(c))
-    }
-}
-
-#[derive(Default)]
-struct UnicodeCollection(HashSet<char>);
-
-impl CharacterInspector for UnicodeCollection {
-    fn characters(&self) -> Vec<char> {
-        self.0.iter().copied().collect()
-    }
-
-    fn contains(&self, c: char) -> bool {
-        self.0.get(&c).is_some()
-    }
-}
-
-#[enum_dispatch(CharacterInspector)]
-enum UnicodeCategory {
-    Block(ub::UnicodeBlock),
-    MultiBlock(UnicodeMultiBlock),
-    Collection(UnicodeCollection),
-}
-
-impl Default for UnicodeCategory {
-    fn default() -> Self {
-        UnicodeCategory::Block(ub::ADLAM)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-enum GlyphScale {
-    Small,
-    Medium,
-    Large,
-}
-
-impl From<GlyphScale> for f32 {
-    fn from(g: GlyphScale) -> f32 {
-        match g {
-            GlyphScale::Small => 18.0,
-            GlyphScale::Medium => 24.0,
-            GlyphScale::Large => 36.0,
-        }
-    }
-}
-
 impl Default for GlyphanaApp {
     fn default() -> Self {
         Self {
@@ -184,137 +63,12 @@ impl Default for GlyphanaApp {
             recently_used: Default::default(),
             recently_used_max_len: 1000,
             collection: Default::default(),
-            selected_category: *RECENTLY_USED_ID,
-            categories: vec![
-                Category::new(
-                    "Emoji",
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::EMOTICONS,
-                        ub::TRANSPORT_AND_MAP_SYMBOLS,
-                        ub::ALCHEMICAL_SYMBOLS,
-                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                        ub::SYMBOLS_FOR_LEGACY_COMPUTING,
-                    ])),
-                ),
-                Category::new(
-                    ub::ARROWS.name(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::ARROWS,
-                        ub::SUPPLEMENTAL_ARROWS_A,
-                        ub::SUPPLEMENTAL_ARROWS_B,
-                        ub::SUPPLEMENTAL_ARROWS_C,
-                    ])),
-                ),
-                Category::new(
-                    ub::CURRENCY_SYMBOLS.name(),
-                    UnicodeCategory::Block(ub::CURRENCY_SYMBOLS),
-                ),
-                Category::new(
-                    "Latin",
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::BASIC_LATIN,
-                        ub::LATIN_1_SUPPLEMENT,
-                        ub::LATIN_EXTENDED_ADDITIONAL,
-                        ub::LATIN_EXTENDED_A,
-                        ub::LATIN_EXTENDED_B,
-                        ub::LATIN_EXTENDED_C,
-                        ub::LATIN_EXTENDED_D,
-                        ub::LATIN_EXTENDED_E,
-                        ub::LATIN_EXTENDED_F,
-                        ub::LATIN_EXTENDED_G,
-                    ])),
-                ),
-                Category::new(
-                    ub::LETTERLIKE_SYMBOLS.name(),
-                    UnicodeCategory::Block(ub::LETTERLIKE_SYMBOLS),
-                ),
-                Category::new(
-                    "Math Symbols",
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MATHEMATICAL_OPERATORS,
-                        ub::SUPPLEMENTAL_MATHEMATICAL_OPERATORS,
-                    ])),
-                ),
-                Category::new(
-                    "Parentheses",
-                    UnicodeCategory::Collection(UnicodeCollection(
-                        vec![
-                            '\u{0028}', '\u{0029}', '\u{005B}', '\u{005D}', '\u{007B}', '\u{007D}',
-                            '\u{0F3A}', '\u{0F3B}', '\u{0F3C}', '\u{0F3D}', '\u{169B}', '\u{169C}',
-                            '\u{2045}', '\u{2046}', '\u{207D}', '\u{207E}', '\u{208D}', '\u{208E}',
-                            '\u{2308}', '\u{2309}', '\u{230A}', '\u{230B}', '\u{2329}', '\u{232A}',
-                            '\u{2768}', '\u{2769}', '\u{276A}', '\u{276B}', '\u{276C}', '\u{276D}',
-                            '\u{276E}', '\u{276F}', '\u{2770}', '\u{2771}', '\u{2772}', '\u{2773}',
-                            '\u{2774}', '\u{2775}', '\u{27C5}', '\u{27C6}', '\u{27E6}', '\u{27E7}',
-                            '\u{27E8}', '\u{27E9}', '\u{27EA}', '\u{27EB}', '\u{27EC}', '\u{27ED}',
-                            '\u{27EE}', '\u{27EF}', '\u{2983}', '\u{2984}', '\u{2985}', '\u{2986}',
-                            '\u{2987}', '\u{2988}', '\u{2989}', '\u{298A}', '\u{298B}', '\u{298C}',
-                            '\u{298D}', '\u{298E}', '\u{298F}', '\u{2990}', '\u{2991}', '\u{2992}',
-                            '\u{2993}', '\u{2994}', '\u{2995}', '\u{2996}', '\u{2997}', '\u{2998}',
-                            '\u{29D8}', '\u{29D9}', '\u{29DA}', '\u{29DB}', '\u{29FC}', '\u{29FD}',
-                            '\u{2E22}', '\u{2E23}', '\u{2E24}', '\u{2E25}', '\u{2E26}', '\u{2E27}',
-                            '\u{2E28}', '\u{2E29}', '\u{2E55}', '\u{2E56}', '\u{2E57}', '\u{2E58}',
-                            '\u{2E59}', '\u{2E5A}', '\u{2E5B}', '\u{2E5C}', '\u{3008}', '\u{3009}',
-                            '\u{300A}', '\u{300B}', '\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}',
-                            '\u{3010}', '\u{3011}', '\u{3014}', '\u{3015}', '\u{3016}', '\u{3017}',
-                            '\u{3018}', '\u{3019}', '\u{301A}', '\u{301B}', '\u{FE59}', '\u{FE5A}',
-                            '\u{FE5B}', '\u{FE5C}', '\u{FE5D}', '\u{FE5E}', '\u{FF08}', '\u{FF09}',
-                            '\u{FF3B}', '\u{FF3D}', '\u{FF5B}', '\u{FF5D}', '\u{FF5F}', '\u{FF60}',
-                            '\u{FF62}', '\u{FF63}',
-                        ]
-                        .iter()
-                        .copied()
-                        .collect::<HashSet<_>>(),
-                    )),
-                ),
-                Category::new(
-                    "Pictographs",
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS,
-                        ub::SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS,
-                        ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
-                    ])),
-                ),
-                Category::new(
-                    "Punctuation",
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::GENERAL_PUNCTUATION,
-                        ub::SUPPLEMENTAL_PUNCTUATION,
-                    ])),
-                ),
-                Category::new(
-                    ub::DINGBATS.name(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::DINGBATS,
-                        ub::ORNAMENTAL_DINGBATS,
-                    ])),
-                ),
-                Category::new(
-                    ub::GEOMETRIC_SHAPES.name(),
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::GEOMETRIC_SHAPES,
-                        ub::GEOMETRIC_SHAPES_EXTENDED,
-                    ])),
-                ),
-                Category::new(
-                    ub::MUSICAL_SYMBOLS.name(),
-                    UnicodeCategory::Block(ub::MUSICAL_SYMBOLS),
-                ),
-                Category::new(
-                    "Game Symbols",
-                    UnicodeCategory::MultiBlock(UnicodeMultiBlock(vec![
-                        ub::MAHJONG_TILES,
-                        ub::DOMINO_TILES,
-                        ub::PLAYING_CARDS,
-                        ub::CHESS_SYMBOLS,
-                    ])),
-                ),
-            ],
+            selected_category: recently_used_id(),
+            categories: create_default_categories(),
             full_glyph_cache: Default::default(),
             showed_glyph_cache: Default::default(),
-
             pixels_per_point: Default::default(),
-            glyph_scale: GlyphScale::Medium,
+            glyph_scale: GlyphScale::Normal,
         }
     }
 }
@@ -329,100 +83,168 @@ impl GlyphanaApp {
         cc.egui_ctx.set_fonts(Self::fonts());
 
         // Load previous app state (if any).
-        // Note that you must enable the `persistence` feature for this to work.
-        let mut glyphana = if let Some(storage) = cc.storage {
-            let mut glyphana: Self =
-                eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
-            glyphana.pixels_per_point = cc.egui_ctx.pixels_per_point();
-            glyphana
-        } else {
-            Self {
-                pixels_per_point: cc.egui_ctx.pixels_per_point(),
-                ..Default::default()
+        if let Some(storage) = cc.storage {
+            let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            // Re-initialize categories after deserialization
+            for category in &mut app.categories {
+                category.unicode_category = Self::get_unicode_category_for_name(&category.name);
             }
-        };
-
-        glyphana.default_font_id = egui::FontId::new(
-            glyphana.glyph_scale.into(),
-            egui::FontFamily::Name(NOTO_SANS.into()),
-        );
-
-        if !glyphana.ui_search_text.is_empty() {
-            glyphana.selected_category = egui::Id::new("Search");
+            app
+        } else {
+            Default::default()
         }
-
-        glyphana
     }
 
-    fn _available_characters(
-        &self,
-        ui: &egui::Ui,
-        family: egui::FontFamily,
-    ) -> BTreeMap<char, String> {
-        ui.fonts(|f| {
-            f.lock()
-                .fonts
-                .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
-                .characters()
-                .iter()
-                .filter(|(chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
-                .map(|(&chr, _)| {
-                    //println!("{}", chr);
-                    (chr, char_name(chr))
-                })
-                .collect()
-        })
+    fn get_unicode_category_for_name(name: &str) -> UnicodeCategory {
+        // Map category names back to their Unicode categories
+        // This is needed for deserialization since we skip the unicode_category field
+        match name {
+            "Emoji" => {
+                use unicode_blocks as ub;
+                UnicodeCategory::MultiBlock(crate::categories::UnicodeMultiBlock(vec![
+                    ub::EMOTICONS,
+                    ub::TRANSPORT_AND_MAP_SYMBOLS,
+                    ub::ALCHEMICAL_SYMBOLS,
+                    ub::SYMBOLS_AND_PICTOGRAPHS_EXTENDED_A,
+                    ub::SYMBOLS_FOR_LEGACY_COMPUTING,
+                ]))
+            }
+            "Parentheses" => {
+                let chars = vec![
+                    '\u{0028}', '\u{0029}', '\u{005B}', '\u{005D}', '\u{007B}', '\u{007D}',
+                    '\u{0F3A}', '\u{0F3B}', '\u{0F3C}', '\u{0F3D}', '\u{169B}', '\u{169C}',
+                    '\u{2045}', '\u{2046}', '\u{207D}', '\u{207E}', '\u{208D}', '\u{208E}',
+                    '\u{2308}', '\u{2309}', '\u{230A}', '\u{230B}', '\u{2329}', '\u{232A}',
+                    '\u{2768}', '\u{2769}', '\u{276A}', '\u{276B}', '\u{276C}', '\u{276D}',
+                    '\u{276E}', '\u{276F}', '\u{2770}', '\u{2771}', '\u{2772}', '\u{2773}',
+                    '\u{2774}', '\u{2775}', '\u{27C5}', '\u{27C6}', '\u{27E6}', '\u{27E7}',
+                    '\u{27E8}', '\u{27E9}', '\u{27EA}', '\u{27EB}', '\u{27EC}', '\u{27ED}',
+                    '\u{27EE}', '\u{27EF}', '\u{2983}', '\u{2984}', '\u{2985}', '\u{2986}',
+                    '\u{2987}', '\u{2988}', '\u{2989}', '\u{298A}', '\u{298B}', '\u{298C}',
+                    '\u{298D}', '\u{298E}', '\u{298F}', '\u{2990}', '\u{2991}', '\u{2992}',
+                    '\u{2993}', '\u{2994}', '\u{2995}', '\u{2996}', '\u{2997}', '\u{2998}',
+                    '\u{29D8}', '\u{29D9}', '\u{29DA}', '\u{29DB}', '\u{29FC}', '\u{29FD}',
+                    '\u{2E22}', '\u{2E23}', '\u{2E24}', '\u{2E25}', '\u{2E26}', '\u{2E27}',
+                    '\u{2E28}', '\u{2E29}', '\u{2E55}', '\u{2E56}', '\u{2E57}', '\u{2E58}',
+                    '\u{2E59}', '\u{2E5A}', '\u{2E5B}', '\u{2E5C}', '\u{3008}', '\u{3009}',
+                    '\u{300A}', '\u{300B}', '\u{300C}', '\u{300D}', '\u{300E}', '\u{300F}',
+                    '\u{3010}', '\u{3011}', '\u{3014}', '\u{3015}', '\u{3016}', '\u{3017}',
+                    '\u{3018}', '\u{3019}', '\u{301A}', '\u{301B}', '\u{FE59}', '\u{FE5A}',
+                    '\u{FE5B}', '\u{FE5C}', '\u{FE5D}', '\u{FE5E}', '\u{FF08}', '\u{FF09}',
+                    '\u{FF3B}', '\u{FF3D}', '\u{FF5B}', '\u{FF5D}', '\u{FF5F}', '\u{FF60}',
+                    '\u{FF62}', '\u{FF63}',
+                ];
+                UnicodeCategory::Collection(UnicodeCollection(chars.into_iter().collect()))
+            }
+            _ => {
+                // Try to match standard categories from create_default_categories
+                for category in create_default_categories() {
+                    if category.name == name {
+                        return category.unicode_category;
+                    }
+                }
+                // Default to empty collection if not found
+                UnicodeCategory::Collection(UnicodeCollection(HashSet::new()))
+            }
+        }
     }
 
     fn fonts() -> egui::FontDefinitions {
         let mut fonts = egui::FontDefinitions::default();
 
-        //let mut font_data: BTreeMap<String, egui::FontData> = BTreeMap::new();
-        //let mut families = BTreeMap::new();
+        // Add Noto Sans
+        fonts.font_data.insert(
+            NOTO_SANS.into(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoSans-Regular.otf")),
+        );
 
+        // Add Noto Sans Mono
         fonts.font_data.insert(
-            NOTO_SANS.to_owned(),
-            egui::FontData::from_static(&NOTO_SANS_FONT).into(),
+            NOTO_SANS_MONO.into(),
+            // NotoSansMono not available, use NotoSans as fallback
+            egui::FontData::from_static(include_bytes!("../assets/NotoSans-Regular.otf")),
         );
+
+        // Add Noto Sans Symbols
         fonts.font_data.insert(
-            NOTO_SANS_MATH.to_owned(),
-            egui::FontData::from_static(&NOTO_SANS_MATH_FONT).into(),
+            NOTO_SANS_SYMBOLS.into(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoSansSymbols-Regular.ttf")),
         );
+
+        // Add Noto Sans Symbols 2
         fonts.font_data.insert(
-            NOTO_EMOJI.to_owned(),
-            egui::FontData::from_static(&NOTO_EMOJI_FONT).into(),
+            NOTO_SANS_SYMBOLS2.into(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoSansSymbols2-Regular.ttf")),
         );
+
+        // Add Noto Sans Math
         fonts.font_data.insert(
-            NOTO_SYMBOLS.to_owned(),
-            egui::FontData::from_static(&NOTO_SYMBOLS_FONT).into(),
+            NOTO_SANS_MATH.into(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoSansMath-Regular.ttf")),
         );
+
+        // Add Noto Music
         fonts.font_data.insert(
-            NOTO_SYMBOLS2.to_owned(),
-            egui::FontData::from_static(&NOTO_SYMBOLS2_FONT).into(),
+            NOTO_MUSIC.into(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoMusic-Regular.ttf")),
         );
-        /*fonts.font_data.insert(
-            NOTO_SIGN_WRITING.to_owned(),
-            egui::FontData::from_static(&NOTO_SIGN_WRITING_FONT).tweak(egui::FontTweak {
-                scale: 1.0,             // make it smaller
-                y_offset_factor: 0.5, // move it up
-                ..Default::default()
-            }),
-        );*/
+
+        // Add Noto Emoji (black and white)
         fonts.font_data.insert(
-            NOTO_MUSIC.to_owned(),
-            egui::FontData::from_static(&NOTO_MUSIC_FONT).into(),
+            NOTO_EMOJI.into(),
+            egui::FontData::from_static(include_bytes!("../assets/NotoEmoji-Regular.ttf")),
+        );
+
+        // AIDEV-NOTE: Color emoji support needs NotoColorEmoji.ttf file
+        // The file exists in assets/fonts/ but needs to be enabled properly
+        // This would require additional font rendering support for color glyphs
+
+        // Configure font families
+        fonts.families.insert(
+            egui::FontFamily::Proportional,
+            vec![
+                NOTO_SANS.into(),
+                NOTO_EMOJI.into(),
+                NOTO_SANS_SYMBOLS.into(),
+                NOTO_SANS_SYMBOLS2.into(),
+                NOTO_SANS_MATH.into(),
+                NOTO_MUSIC.into(),
+            ],
+        );
+
+        fonts.families.insert(
+            egui::FontFamily::Monospace,
+            vec![
+                NOTO_SANS_MONO.into(),
+                NOTO_EMOJI.into(),
+                NOTO_SANS_SYMBOLS.into(),
+                NOTO_SANS_SYMBOLS2.into(),
+                NOTO_SANS_MATH.into(),
+                NOTO_MUSIC.into(),
+            ],
         );
 
         fonts.families.insert(
             egui::FontFamily::Name(NOTO_SANS.into()),
             vec![
-                NOTO_SANS.to_owned(),
-                NOTO_SANS_MATH.to_owned(),
-                NOTO_EMOJI.to_owned(),
-                NOTO_SYMBOLS.to_owned(),
-                NOTO_SYMBOLS2.to_owned(),
-                //NOTO_SIGN_WRITING.to_owned(),
-                NOTO_MUSIC.to_owned(),
+                NOTO_SANS.into(),
+                NOTO_EMOJI.into(),
+                NOTO_SANS_SYMBOLS.into(),
+                NOTO_SANS_SYMBOLS2.into(),
+                NOTO_SANS_MATH.into(),
+                NOTO_MUSIC.into(),
+            ],
+        );
+
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_EMOJI.into()),
+            vec![
+                NOTO_EMOJI.into(),
+                NOTO_SANS.into(),
+                NOTO_SANS_SYMBOLS.into(),
+                NOTO_SANS_SYMBOLS2.into(),
+                NOTO_SANS_MATH.into(),
+                NOTO_MUSIC.into(),
             ],
         );
 
@@ -431,935 +253,456 @@ impl GlyphanaApp {
 }
 
 impl eframe::App for GlyphanaApp {
-    /// Called by the framework to save state before shutdown.
+    /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &eframe::egui::Context, _frame: &mut eframe::Frame) {
-        //self.update_search_text_and_showed_glyph_cache();
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Check for screen DPI changes
+        let current_ppp = ctx.pixels_per_point();
+        if self.pixels_per_point != current_ppp && current_ppp > 0.0 {
+            self.pixels_per_point = current_ppp;
+        }
 
-        /*if let Ok(event) = tray_icon::TrayEvent::receiver().try_recv() {
-            info!("tray event: {event:?}");
-        }*/
+        // Update the glyph cache if needed
+        if self.full_glyph_cache.is_empty() {
+            self.update_full_glyph_cache(&ctx);
+        }
 
-        egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
-            // Hamburger menu.
+        // Top panel with search and controls
+        self.render_top_panel(ctx);
+
+        // Side panel with categories
+        self.render_side_panel(ctx);
+
+        // Central panel with glyphs
+        self.render_central_panel(ctx);
+    }
+}
+
+// UI rendering methods
+impl GlyphanaApp {
+    fn render_top_panel(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.menu_button(format!("{}", super::HAMBURGER), |ui| {
-                    #[cfg(debug_assertions)]
-                    if ui.button("Reset App State").clicked() {
-                        *self = Self::default();
-                    }
+                ui.label("🔍");
 
-                    /*if ui.button("Customize List…").clicked() {
-                        todo!()
-                    }
+                let search_response = ui.text_edit_singleline(&mut self.ui_search_text);
+                if search_response.changed() {
+                    self.update_search_text_and_cache();
+                }
 
-                    ui.separator();*/
-
-                    ui.add_enabled_ui(false, |ui| ui.button("Glyph Size"));
-
-                    ui.vertical(|ui| {
-                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Small, "Small");
-                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Medium, "Medium");
-                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Large, "Large");
-                    });
-
-                    self.default_font_id.size = self.glyph_scale.into();
-
-                    ui.separator();
-
-                    if ui.button("Clear Recently Used").clicked() {
-                        self.recently_used.clear();
-                    }
-
-                    ui.separator();
-
-                    ui.add_enabled_ui(false, |ui| ui.button("Export Collection…"));
-
-                    ui.separator();
-
-                    if ui.button("Quit").clicked() {
-                        ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-                    }
-                });
-
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(format!("{}", super::CANCELLATION)).clicked() {
-                        self.search_text.clear();
-                    }
-
-                    // Fill character chache.
-                    if self.full_glyph_cache.is_empty() {
-                        self.full_glyph_cache =
-                            available_characters(ui, self.default_font_id.family.clone());
-                        self.showed_glyph_cache = self.full_glyph_cache.clone();
-                    }
-
-                    if ui
-                        .add(
-                            egui::TextEdit::singleline(&mut self.ui_search_text)
-                                //.desired_width(120.0)
-                                .hint_text("🔍 Search"),
-                        )
-                        .changed()
-                    {
-                        self.update_search_text_and_showed_glyph_cache();
-                    }
-                    //self.search_text = decancer::cure(&self.ui_search_text).into_str();
-
-                    if !self.case_sensitive {
-                        self.search_text = self.search_text.to_lowercase();
-                    }
-
-                    ui.toggle_value(&mut self.case_sensitive, "Aa".to_string())
-                        .on_hover_ui(|ui| {
-                            ui.label("Match Case");
-                        });
-
-                    if ui
-                        .add_enabled_ui(!self.case_sensitive, |ui| {
-                            ui.toggle_value(&mut self.search_name, format!("{}", super::NAME_BADGE))
-                                .on_hover_ui(|ui| {
-                                    ui.label("Include Glyph Name in Search");
-                                })
-                        })
-                        .response
-                        .changed()
-                    {
-                        self.update_search_text_and_showed_glyph_cache();
-                    }
-                });
-            });
-        });
-
-        egui::SidePanel::left("categories").show(ctx, |ui| {
-            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-                /*egui::Grid::new("custom_categories")
-                .num_columns(1)
-                //.spacing([40.0, 4.0])
-                .striped(true)
-                .show(ui, |ui| {*/
-                let name = "Recently Used";
-                ui.selectable_value(&mut self.selected_category, egui::Id::new(name), name);
-                // ui.end_row();
-
-                let name = "Collection";
-                ui.selectable_value(&mut self.selected_category, egui::Id::new(name), name);
-                // ui.end_row();
-
-                ui.add_enabled(!self.ui_search_text.is_empty(), |ui: &mut egui::Ui| {
-                    let name = "Search";
-                    ui.selectable_value(&mut self.selected_category, egui::Id::new(name), name)
-                });
-                //   ui.end_row();
-                // });
+                if ui.button("Clear").clicked() {
+                    self.ui_search_text.clear();
+                    self.update_search_text_and_cache();
+                }
 
                 ui.separator();
 
-                /*egui::Grid::new("categories")
-                .num_columns(1)
-                .striped(true)
-                .show(ui, |ui| {*/
-                /*  for (i, category) in &mut self.categories.iter().enumerate() {
-                    ui.selectable_value(&mut self.selected_category, i + CAT_START, &category.name);
-                    //ui.end_row();
-                }*/
+                ui.checkbox(
+                    &mut self.search_only_categories,
+                    "Search only selected category",
+                );
+                ui.checkbox(&mut self.search_name, "Search names");
+                ui.checkbox(&mut self.case_sensitive, "Case sensitive");
 
-                dnd(ui, "dnd_example").show_vec(&mut self.categories, |ui, item, handle, _| {
-                    handle.show_drag_cursor_on_hover(false).ui(ui, |ui| {
-                        ui.selectable_value(&mut self.selected_category, item.id(), &item.name);
-                    });
+                ui.separator();
+
+                ui.label("Size:");
+                ui.horizontal(|ui| {
+                    if ui
+                        .selectable_label(self.glyph_scale == GlyphScale::Tiny, "Tiny")
+                        .clicked()
+                    {
+                        self.glyph_scale = GlyphScale::Tiny;
+                    }
+                    if ui
+                        .selectable_label(self.glyph_scale == GlyphScale::Small, "Small")
+                        .clicked()
+                    {
+                        self.glyph_scale = GlyphScale::Small;
+                    }
+                    if ui
+                        .selectable_label(self.glyph_scale == GlyphScale::Normal, "Normal")
+                        .clicked()
+                    {
+                        self.glyph_scale = GlyphScale::Normal;
+                    }
+                    if ui
+                        .selectable_label(self.glyph_scale == GlyphScale::Large, "Large")
+                        .clicked()
+                    {
+                        self.glyph_scale = GlyphScale::Large;
+                    }
+                    if ui
+                        .selectable_label(self.glyph_scale == GlyphScale::Huge, "Huge")
+                        .clicked()
+                    {
+                        self.glyph_scale = GlyphScale::Huge;
+                    }
                 });
             });
         });
+    }
 
-        if *SEARCH_ID == self.selected_category {
-            self.update_search_text_and_showed_glyph_cache();
-        } else {
-            self.search_text.clear();
-            self.showed_glyph_cache = self.full_glyph_cache.clone();
-        } //self.update_search_text_and_showed_glyph_cache();
+    fn render_side_panel(&mut self, ctx: &egui::Context) {
+        egui::SidePanel::left("side_panel").show(ctx, |ui| {
+            ui.heading("Categories");
 
-        egui::SidePanel::right("character_preview").show(ctx, |ui| {
-            //egui::ScrollArea::vertical().show(ui, |ui| {
-            //let (id, rect) = ui.allocate_space(egui::vec2(50.0, 50.0));
-
-            //let painter = ui.painter();
-
-            /*let painter = Painter::new(
-                ctx.clone(),
-                egui::LayerId::new(egui::Order::Foreground, id),
-                rect,
-            );*/
-
-            // TODO: make painter fill the entire panel width (scale the glyph accordingly).
-            let rect = ui.available_rect_before_wrap();
-
-            let scale = rect.max.x - rect.min.x;
-
-            let (response, painter) =
-                ui.allocate_painter(egui::Vec2::new(scale, 1.2 * scale), egui::Sense::click());
-
-            //painter.on_hover_ui(ui.label("Click to Copy 📋"));
-
-            //let painter =
-            //Painter::new(ctx.clone(), ui.layer_id(), ui.available_rect_before_wrap());
-
-            self.paint_glyph(scale * 0.8, ui, response, painter);
-
-            ui.with_layout(
-                egui::Layout::top_down_justified(egui::Align::Center),
-                |ui| {
-                    egui::Grid::new("glyph_name")
-                        .num_columns(1)
-                        //.min_col_width(scale)
-                        .min_row_height(60.0)
-                        //.spacing([40.0, 4.0])
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.end_row();
-                            ui.centered_and_justified(|ui| {
-                                let name = textwrap::wrap(
-                                    &title_case(
-                                        &unicode_names2::name(self.selected_char)
-                                            .map(|name| name.to_string().to_lowercase())
-                                            .unwrap_or_default(),
-                                    ),
-                                    18,
-                                )
-                                .join("\n");
-
-                                ui.label(name);
-                            });
+            // Handle drag and drop
+            let response = dnd(ui, "category_dnd").show_vec(
+                &mut self.categories,
+                |ui, category, handle, _state| {
+                    ui.horizontal(|ui| {
+                        handle.ui(ui, |ui| {
+                            ui.label("≡");
                         });
 
-                    egui::Grid::new("glyph_codepoints")
-                        .num_columns(2)
-                        .min_col_width(scale / 2.1)
-                        //.spacing([40.0, 4.0])
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.end_row();
-                            // Unicode
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                                ui.label("Unicode");
-                            });
-
-                            let unicode_hex: [u8; 4] = bytemuck::cast(self.selected_char);
-
-                            let mut unicode_hex_string_ui = String::from("U+");
-                            let mut unicode_html_string = String::from("&#");
-
-                            if 0 != unicode_hex[3] {
-                                unicode_hex_string_ui += &format!("{:02X}\u{2009}", unicode_hex[3]);
-                                unicode_html_string += &format!("{:02X}", unicode_hex[3]);
-                            }
-
-                            unicode_hex[..2].iter().rev().for_each(|&uc| {
-                                if 0 != uc || !unicode_hex_string_ui.is_empty() {
-                                    unicode_hex_string_ui += &format!("{uc:02X}\u{2009}");
-                                    unicode_html_string += &format!("{uc:02X}");
-                                }
-                            });
-
-                            if ui
-                                .button(egui::RichText::new(unicode_hex_string_ui).monospace())
-                                .on_hover_ui(|ui| {
-                                    ui.label("Click to Copy Unicode as HTML");
-                                })
-                                .clicked()
-                            {
-                                ui.ctx().copy_text(unicode_html_string);
-                            }
-
-                            ui.end_row();
-
-                            // Utf8
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                                ui.label("UTF-8");
-                            });
-
-                            let mut utf_eight = [0u8; 4];
-                            encode_unicode::Utf8Char::new(self.selected_char)
-                                .to_slice(&mut utf_eight);
-
-                            let mut utf_eight_string_ui = String::new();
-                            let mut utf_eight_string = String::new();
-
-                            if 0 != utf_eight[3] {
-                                utf_eight_string_ui += &format!("{:02X}\u{2009}", utf_eight[3]);
-                                utf_eight_string += &format!("{:02X}", utf_eight[3]);
-                            }
-
-                            utf_eight[..2].iter().rev().for_each(|&uc| {
-                                if 0 != uc || !utf_eight_string.is_empty() {
-                                    utf_eight_string_ui += &format!("{uc:02X}\u{2009}");
-                                    utf_eight_string += &format!("{uc:02X}");
-                                }
-                            });
-
-                            if ui
-                                .button(egui::RichText::new(utf_eight_string_ui).monospace())
-                                .on_hover_ui(|ui| {
-                                    ui.label("Click to Copy UTF8 Code");
-                                })
-                                .clicked()
-                            {
-                                ui.ctx().copy_text(utf_eight_string);
-                            }
-
-                            ui.end_row();
-                        });
-
-                    egui::Grid::new("collect")
-                        .num_columns(1)
-                        //.min_col_width(scale)
-                        //.spacing([40.0, 4.0])
-                        .striped(true)
-                        .show(ui, |ui| {
-                            ui.end_row();
-                            ui.centered_and_justified(|ui| {
-                                let is_in_collection =
-                                    self.collection.contains(&self.selected_char);
-
-                                let hover_text = |ui: &mut egui::Ui| {
-                                    ui.label("Add Glyp to Collection");
-                                };
-                                if ui
-                                    .add(egui::Button::new("Collect").selected(is_in_collection))
-                                    .on_hover_ui(hover_text)
-                                    .clicked()
-                                {
-                                    if is_in_collection {
-                                        self.collection.remove(&self.selected_char);
-                                    } else {
-                                        self.collection.insert(self.selected_char);
-                                    }
-                                }
-                            });
-                        });
+                        let is_selected = self.selected_category == category.id();
+                        if ui.selectable_label(is_selected, &category.name).clicked() {
+                            self.selected_category = category.id();
+                            self.update_search_text_and_cache();
+                        }
+                    });
                 },
             );
-        });
 
+            if response.final_update().is_some() {
+                self.update_search_text_and_cache();
+            }
+
+            ui.separator();
+
+            // Special categories
+            if ui
+                .selectable_label(self.selected_category == recently_used_id(), RECENTLY_USED)
+                .clicked()
+            {
+                self.selected_category = recently_used_id();
+                self.update_search_text_and_cache();
+            }
+
+            if ui
+                .selectable_label(self.selected_category == collection_id(), COLLECTION)
+                .clicked()
+            {
+                self.selected_category = collection_id();
+                self.update_search_text_and_cache();
+            }
+
+            if ui
+                .selectable_label(self.selected_category == search_id(), SEARCH)
+                .clicked()
+            {
+                self.selected_category = search_id();
+                self.update_search_text_and_cache();
+            }
+        });
+    }
+
+    fn render_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing = egui::Vec2::splat(2.0);
+            // Show single glyph view if a character is selected
+            if self.selected_char != '\0' {
+                self.render_single_glyph_view(ui);
+            } else {
+                self.render_glyph_grid(ui);
+            }
+        });
+    }
 
-                    //info!("ã == a is {}", focaccia::unicode_full_case_eq("a", "ã"));
+    fn render_single_glyph_view(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if ui.button("← Back").clicked() {
+                self.selected_char = '\0';
+            }
 
-                    let recently_used = self.recently_used.clone();
-                    self.showed_glyph_cache
-                        .iter()
-                        // Filter by category.
-                        .filter(|(&chr, _)| {
-                            !self.search_text.is_empty()
-                                || if *RECENTLY_USED_ID == self.selected_category {
-                                    recently_used.contains(&chr)
-                                } else if *COLLECTION_ID == self.selected_category {
-                                    self.collection.contains(&chr)
-                                } else if *SEARCH_ID == self.selected_category {
-                                    true
-                                } else {
-                                    match self
-                                        .categories
-                                        .iter()
-                                        .find(|c| self.selected_category == egui::Id::new(c))
-                                    {
-                                        Some(c) => c.unicode_category.contains(chr),
-                                        None => unreachable!(),
-                                    }
-                                }
+            ui.separator();
 
-                            // If no category is selected display all glyphs in the font
-                            /*||
-                            self
-                                .categories
-                                .iter()
-                                .fold(true, |none_selected, cat| none_selected && !cat.2)*/
-                        })
-                        .for_each(|(&chr, name)| {
-                            let button = egui::Button::new(
-                                egui::RichText::new(chr.to_string())
-                                    .font(self.default_font_id.clone()),
-                            )
-                            .frame(true)
-                            .min_size(egui::Vec2::splat(self.default_font_id.size * 2.));
+            if ui.button("Copy Character").clicked() {
+                ui.output_mut(|o| o.copied_text = self.selected_char.to_string());
+            }
 
-                            let tooltip_ui = |ui: &mut egui::Ui| {
-                                ui.label(
-                                    egui::RichText::new(chr.to_string())
-                                        .font(self.default_font_id.clone()),
-                                );
-                                ui.label(format!(
-                                    "{}\nU+{:X}\n\nDouble-click to copy 📋",
-                                    capitalize(name),
-                                    chr as u32
-                                ));
-                            };
+            if ui.button("Copy Unicode").clicked() {
+                ui.output_mut(|o| o.copied_text = format!("U+{:04X}", self.selected_char as u32));
+            }
 
-                            let hover_button = ui
-                                .add_sized(
-                                    egui::Vec2::splat(self.default_font_id.size * 2.),
-                                    button,
-                                )
-                                .on_hover_ui(tooltip_ui);
-
-                            if hover_button.double_clicked() {
-                                // Send to clipboard.
-                                ui.ctx().copy_text(chr.to_string());
-
-                                /*use enigo::KeyboardControllable;
-                                let mut enigo = enigo::Enigo::new();
-                                let alt_tab = "{+ALT}{TAB}{-ALT}".to_string();
-                                enigo.key_sequence_parse(&(alt_tab.clone() + &chr.to_string() + &alt_tab))
-                                */
-                            } else if hover_button.clicked() {
-                                self.selected_char = chr;
-                                self.recently_used.push_back(chr);
-                                if self.recently_used_max_len <= recently_used.len() {
-                                    self.recently_used.pop_front();
-                                }
-                            }
-                        });
-                });
-            });
+            if !self.collection.contains(&self.selected_char) {
+                if ui.button("Add to Collection").clicked() {
+                    self.collection.insert(self.selected_char);
+                }
+            } else if ui.button("Remove from Collection").clicked() {
+                self.collection.remove(&self.selected_char);
+            }
         });
 
-        if false {
-            egui::Window::new("Window").show(ctx, |ui| {
-                ui.label("Windows can be moved by dragging them.");
-                ui.label("They are automatically sized based on contents.");
-                ui.label("You can turn on resizing and scrolling if you like.");
-                ui.label("You would normally choose either panels OR windows.");
+        ui.separator();
+
+        // Display character info
+        ui.heading(format!("{}", self.selected_char));
+        ui.label(format!("Name: {}", char_name(self.selected_char)));
+        ui.label(format!(
+            "Code: U+{:04X} ({})",
+            self.selected_char as u32, self.selected_char as u32
+        ));
+
+        ui.separator();
+
+        // Font preview with proper ascender/descender lines
+        self.render_font_preview(ui);
+    }
+
+    fn render_font_preview(&self, ui: &mut egui::Ui) {
+        use rusttype::{Font, Scale};
+
+        // Try to load a font for metrics
+        let font_data = include_bytes!("../assets/NotoSans-Regular.otf");
+        if let Some(font) = Font::try_from_bytes(font_data) {
+            let scale = Scale::uniform(100.0);
+            let v_metrics = font.v_metrics(scale);
+
+            let baseline = 100.0;
+            let ascent_line = baseline - v_metrics.ascent;
+            let descent_line = baseline - v_metrics.descent;
+
+            ui.group(|ui| {
+                let (response, painter) =
+                    ui.allocate_painter(egui::Vec2::new(200.0, 150.0), egui::Sense::hover());
+
+                let rect = response.rect;
+
+                // Draw guidelines with labels
+                let line_color = egui::Color32::from_rgb(100, 100, 100);
+                let label_color = egui::Color32::from_rgb(150, 150, 150);
+
+                // Ascender line
+                painter.line_segment(
+                    [
+                        rect.left_top() + egui::vec2(0.0, ascent_line),
+                        rect.right_top() + egui::vec2(0.0, ascent_line),
+                    ],
+                    egui::Stroke::new(1.0, line_color),
+                );
+                painter.text(
+                    rect.left_top() + egui::vec2(5.0, ascent_line - 15.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    "ascender",
+                    egui::FontId::default(),
+                    label_color,
+                );
+
+                // Baseline
+                painter.line_segment(
+                    [
+                        rect.left_top() + egui::vec2(0.0, baseline),
+                        rect.right_top() + egui::vec2(0.0, baseline),
+                    ],
+                    egui::Stroke::new(2.0, line_color),
+                );
+                painter.text(
+                    rect.left_top() + egui::vec2(5.0, baseline - 5.0),
+                    egui::Align2::LEFT_BOTTOM,
+                    "baseline",
+                    egui::FontId::default(),
+                    label_color,
+                );
+
+                // Descender line
+                painter.line_segment(
+                    [
+                        rect.left_top() + egui::vec2(0.0, descent_line),
+                        rect.right_top() + egui::vec2(0.0, descent_line),
+                    ],
+                    egui::Stroke::new(1.0, line_color),
+                );
+                painter.text(
+                    rect.left_top() + egui::vec2(5.0, descent_line + 15.0),
+                    egui::Align2::LEFT_TOP,
+                    "descender",
+                    egui::FontId::default(),
+                    label_color,
+                );
+
+                // Draw the character
+                painter.text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    self.selected_char.to_string(),
+                    egui::FontId::new(72.0, egui::FontFamily::Name(NOTO_SANS.into())),
+                    egui::Color32::WHITE,
+                );
             });
+        }
+    }
+
+    fn render_glyph_grid(&mut self, ui: &mut egui::Ui) {
+        let glyphs_to_show = self.get_glyphs_to_show();
+
+        if glyphs_to_show.is_empty() {
+            ui.centered_and_justified(|ui| {
+                ui.label("No glyphs to display");
+            });
+            return;
+        }
+
+        // Calculate grid dimensions
+        let scale_factor: f32 = self.glyph_scale.into();
+        let base_size = 48.0 * scale_factor;
+        let spacing = 4.0;
+
+        let available_width = ui.available_width();
+        let columns = ((available_width - spacing) / (base_size + spacing)).floor() as usize;
+        let columns = columns.max(1);
+
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(spacing, spacing);
+
+                for (chr, name) in glyphs_to_show {
+                    let response = ui
+                        .allocate_response(egui::vec2(base_size, base_size), egui::Sense::click());
+
+                    if response.clicked() {
+                        self.selected_char = chr;
+                        self.add_to_recently_used(chr);
+                    }
+
+                    // Draw glyph
+                    let rect = response.rect;
+                    let is_in_collection = self.collection.contains(&chr);
+
+                    ui.painter().rect_filled(
+                        rect,
+                        2.0,
+                        if is_in_collection {
+                            egui::Color32::from_rgb(40, 60, 40)
+                        } else {
+                            egui::Color32::from_rgb(30, 30, 30)
+                        },
+                    );
+
+                    ui.painter().text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        chr.to_string(),
+                        egui::FontId::new(base_size * 0.6, self.default_font_id.family.clone()),
+                        egui::Color32::WHITE,
+                    );
+
+                    // Show tooltip
+                    response.on_hover_text(&name);
+                }
+            });
+        });
+    }
+
+    fn get_glyphs_to_show(&self) -> Vec<(char, String)> {
+        if self.selected_category == recently_used_id() {
+            self.recently_used
+                .iter()
+                .map(|&c| (c, char_name(c)))
+                .collect()
+        } else if self.selected_category == collection_id() {
+            let mut glyphs: Vec<_> = self.collection.iter().map(|&c| (c, char_name(c))).collect();
+            glyphs.sort_by_key(|&(c, _)| c);
+            glyphs
+        } else if self.selected_category == search_id() || !self.search_text.is_empty() {
+            self.showed_glyph_cache
+                .iter()
+                .map(|(&c, n)| (c, n.clone()))
+                .collect()
+        } else {
+            // Show glyphs from selected category
+            let category = self
+                .categories
+                .iter()
+                .find(|c| c.id() == self.selected_category);
+
+            if let Some(cat) = category {
+                cat.unicode_category
+                    .characters()
+                    .into_iter()
+                    .filter_map(|c| self.full_glyph_cache.get(&c).map(|n| (c, n.clone())))
+                    .collect()
+            } else {
+                vec![]
+            }
         }
     }
 }
 
-// .auto_shrink([false;2])
+// Helper methods
 impl GlyphanaApp {
-    fn update_search_text_and_showed_glyph_cache(&mut self) {
+    fn update_full_glyph_cache(&mut self, ctx: &egui::Context) {
+        ctx.fonts(|fonts| {
+            self.full_glyph_cache = available_characters(
+                &egui::Ui::new(
+                    ctx.clone(),
+                    egui::LayerId::background(),
+                    egui::Id::new("cache_update"),
+                ),
+                egui::FontFamily::Name(NOTO_SANS.into()),
+            );
+        });
+        self.update_search_text_and_cache();
+    }
+
+    fn update_search_text_and_cache(&mut self) {
         self.search_text = self.ui_search_text.clone();
         self.split_search_text = self
             .search_text
-            .split(' ')
-            .filter_map(|s| {
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s.to_string())
-                }
-            })
+            .split_whitespace()
+            .map(str::to_string)
             .collect();
-        self.split_search_text_lower = self
-            .split_search_text
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect();
-
-        // Update character cache.
-        if self.search_text.is_empty() {
-            // Use category filtering.
-            self.showed_glyph_cache = self.full_glyph_cache.clone();
-            if *SEARCH_ID == self.selected_category {
-                self.selected_category = *RECENTLY_USED_ID;
-            }
-        } else {
-            self.selected_category = *SEARCH_ID;
-            // Use StringZilla for fuzzy matching with edit distance
-            // Lower threshold = stricter matching
-            let max_edit_distance = 2; // Allow up to 2 character edits for fuzzy matches
-
-            self.showed_glyph_cache = self
-                .full_glyph_cache
-                .clone()
-                .into_iter()
-                // Filter by search string.
-                .filter(|(chr, name)| {
-                    let chr_normalized = match self.case_sensitive {
-                        true => *chr,
-                        false => {
-                            let lower_case = unicode_case_mapping::to_lowercase(*chr);
-                            match lower_case[0] {
-                                0 => *chr,
-                                _ => char::from_u32(lower_case[0]).unwrap(),
-                            }
-                        }
-                    };
-
-                    // Search in multiple places for maximum flexibility
-                    let mut matches = false;
-
-                    // 1. Direct character match
-                    if self.search_text.contains(&chr_normalized.to_string()) {
-                        matches = true;
-                    }
-
-                    // 2. Fuzzy search in character name using edit distance
-                    if !matches {
-                        let name_lower = name.to_lowercase();
-                        if self.split_search_text_lower.iter().any(|text| {
-                            // Try exact contains first for performance
-                            if name_lower.contains(text) {
-                                return true;
-                            }
-                            // Then try fuzzy matching with edit distance
-                            // For short search strings, use stricter matching
-                            let adjusted_distance = if text.len() <= 3 {
-                                1
-                            } else {
-                                max_edit_distance
-                            };
-                            
-                            // Check if any substring of name has low edit distance to search text
-                            if text.len() <= name_lower.len() {
-                                for i in 0..=(name_lower.len() - text.len()) {
-                                    let substring = &name_lower[i..i + text.len()];
-                                    if text.sz_edit_distance(substring) <= adjusted_distance {
-                                        return true;
-                                    }
-                                }
-                            }
-                            false
-                        }) {
-                            matches = true;
-                        }
-                    }
-
-                    // 3. Fuzzy search in glyph names
-                    if !matches
-                        && self.split_search_text_lower.iter().any(|text| {
-                            glyph_names::glyph_name(*chr as _)
-                                .map(|gname| {
-                                    let gname_lower = gname.to_lowercase();
-                                    // Try exact contains first
-                                    if gname_lower.contains(text) {
-                                        return true;
-                                    }
-                                    // Then try fuzzy matching with edit distance
-                                    let adjusted_distance = if text.len() <= 3 {
-                                        1
-                                    } else {
-                                        max_edit_distance
-                                    };
-                                    
-                                    if text.len() <= gname_lower.len() {
-                                        for i in 0..=(gname_lower.len() - text.len()) {
-                                            let substring = &gname_lower[i..i + text.len()];
-                                            if text.sz_edit_distance(substring) <= adjusted_distance {
-                                                return true;
-                                            }
-                                        }
-                                    }
-                                    false
-                                })
-                                .unwrap_or(false)
-                        })
-                    {
-                        matches = true;
-                    }
-
-                    // 4. Fuzzy search Unicode block name
-                    if !matches
-                        && self.split_search_text_lower.iter().any(|text| {
-                            ub::find_unicode_block(*chr)
-                                .map(|block| {
-                                    let block_name = block.name().to_lowercase();
-                                    // Try exact contains first
-                                    if block_name.contains(text) {
-                                        return true;
-                                    }
-                                    // Then try fuzzy matching
-                                    let adjusted_distance = if text.len() <= 3 {
-                                        1
-                                    } else {
-                                        max_edit_distance
-                                    };
-                                    
-                                    if text.len() <= block_name.len() {
-                                        for i in 0..=(block_name.len() - text.len()) {
-                                            let substring = &block_name[i..i + text.len()];
-                                            if text.sz_edit_distance(substring) <= adjusted_distance {
-                                                return true;
-                                            }
-                                        }
-                                    }
-                                    false
-                                })
-                                .unwrap_or(false)
-                        })
-                    {
-                        matches = true;
-                    }
-
-                    // 5. Search for hex code (e.g., "U+1F600" or just "1F600") - NO FUZZY
-                    if !matches {
-                        let hex_code = format!("{:04X}", *chr as u32);
-                        if self.split_search_text.iter().any(|text| {
-                            let search_upper = text.to_uppercase();
-                            hex_code.contains(&search_upper) || search_upper.contains(&hex_code)
-                        }) {
-                            matches = true;
-                        }
-                    }
-
-                    // 6. Search for confusable characters
-                    if !matches
-                        && self.search_text.chars().any(|c| {
-                            unicode_skeleton::confusable(
-                                [chr_normalized].into_iter(),
-                                [c].into_iter(),
-                            )
-                        })
-                    {
-                        matches = true;
-                    }
-
-                    // 7. Search for decimal code - NO FUZZY
-                    if !matches {
-                        let decimal_code = (*chr as u32).to_string();
-                        if self
-                            .split_search_text.contains(&decimal_code)
-                        {
-                            matches = true;
-                        }
-                    }
-
-                    matches
-                })
+        self.split_search_text_lower = if !self.case_sensitive {
+            self.split_search_text
+                .iter()
+                .map(|s| s.to_lowercase())
                 .collect()
-        }
-    }
-
-    fn paint_glyph(
-        &mut self,
-        scale: f32,
-        ui: &mut egui::Ui,
-        response: egui::Response,
-        painter: egui::Painter,
-    ) {
-        let rect = response.rect;
-        let center = rect.center();
-
-        // Use a consistent glyph size for all fonts
-        let display_size = scale * 0.6;
-        let margin = scale * 0.15;
-
-        let left = rect.min.x + margin;
-        let right = rect.max.x - margin;
-
-        // Calculate vertical center for glyph display
-        let vertical_center = rect.min.y + rect.height() * 0.5;
-
-        // Try to get metrics from the actual font that will render the character
-        let font_bytes =
-            if self.selected_char as u32 >= 0x1F300 && self.selected_char as u32 <= 0x1F6FF {
-                &NOTO_EMOJI_FONT[..]
-            } else if self.selected_char as u32 >= 0x2600 && self.selected_char as u32 <= 0x27BF {
-                &NOTO_SYMBOLS_FONT[..]
-            } else if self.selected_char as u32 >= 0x1D100 && self.selected_char as u32 <= 0x1D1FF {
-                &NOTO_MUSIC_FONT[..]
-            } else {
-                &NOTO_SANS_FONT[..]
-            };
-
-        let font = rusttype::Font::try_from_bytes(font_bytes).unwrap();
-        let v_metrics = font.v_metrics(rusttype::Scale::uniform(display_size));
-
-        // Normalize metrics for consistent display
-        let metric_scale = display_size / (v_metrics.ascent - v_metrics.descent).abs();
-        let normalized_ascent = v_metrics.ascent * metric_scale;
-        let normalized_descent = v_metrics.descent * metric_scale;
-
-        // Calculate baseline position
-        let baseline_y = vertical_center + normalized_ascent * 0.3;
-
-        let visuals = &ui.ctx().style().visuals;
-        let dark_mode = visuals.dark_mode;
-
-        let glyph_color = if dark_mode {
-            egui::Color32::WHITE
         } else {
-            egui::Color32::BLACK
+            vec![]
         };
 
-        // Draw the glyph centered on the baseline
-        painter.text(
-            egui::Pos2::new(center.x, baseline_y),
-            egui::Align2::CENTER_BOTTOM,
-            self.selected_char,
-            egui::FontId::new(display_size, egui::FontFamily::Name(NOTO_SANS.into())),
-            glyph_color,
+        // Use the new search engine
+        let params = SearchParams::new(
+            self.search_text.clone(),
+            self.search_only_categories,
+            self.search_name,
+            self.case_sensitive,
         );
 
-        // Style for lines
-        let mut line_stroke = visuals.widgets.noninteractive.fg_stroke;
-        line_stroke.color = line_stroke.color.linear_multiply(0.3);
-        line_stroke.width = 1.0;
+        self.showed_glyph_cache = SearchEngine::search(
+            &params,
+            &self.full_glyph_cache,
+            &self.categories,
+            self.selected_category,
+        );
+    }
 
-        // Style for labels
-        let label_color = visuals.weak_text_color();
-        let label_size = 10.0;
+    fn add_to_recently_used(&mut self, chr: char) {
+        // Remove if already exists
+        if let Some(pos) = self.recently_used.iter().position(|&c| c == chr) {
+            self.recently_used.remove(pos);
+        }
 
-        // Draw ascender line
-        let ascender_y = baseline_y - normalized_ascent;
-        painter.line_segment(
-            [
-                egui::Pos2::new(left, ascender_y),
-                egui::Pos2::new(right, ascender_y),
-            ],
-            line_stroke,
-        );
-        painter.text(
-            egui::Pos2::new(left - 5.0, ascender_y),
-            egui::Align2::RIGHT_CENTER,
-            "ascender",
-            egui::FontId::proportional(label_size),
-            label_color,
-        );
+        // Add to front
+        self.recently_used.push_front(chr);
 
-        // Draw baseline
-        painter.line_segment(
-            [
-                egui::Pos2::new(left, baseline_y),
-                egui::Pos2::new(right, baseline_y),
-            ],
-            egui::Stroke::new(line_stroke.width * 1.5, line_stroke.color),
-        );
-        painter.text(
-            egui::Pos2::new(left - 5.0, baseline_y),
-            egui::Align2::RIGHT_CENTER,
-            "baseline",
-            egui::FontId::proportional(label_size),
-            label_color,
-        );
-
-        // Draw descender line
-        let descender_y = baseline_y - normalized_descent;
-        painter.line_segment(
-            [
-                egui::Pos2::new(left, descender_y),
-                egui::Pos2::new(right, descender_y),
-            ],
-            line_stroke,
-        );
-        painter.text(
-            egui::Pos2::new(left - 5.0, descender_y),
-            egui::Align2::RIGHT_CENTER,
-            "descender",
-            egui::FontId::proportional(label_size),
-            label_color,
-        );
-
-        ui.expand_to_include_rect(painter.clip_rect());
+        // Trim to max length
+        while self.recently_used.len() > self.recently_used_max_len {
+            self.recently_used.pop_back();
+        }
     }
 }
 
-fn available_characters(ui: &egui::Ui, family: egui::FontFamily) -> BTreeMap<char, String> {
-    ui.fonts(|f| {
-        f.lock()
-            .fonts
-            .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
-            .characters()
-            .iter()
-            .filter(|(chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
-            .map(|(&chr, _)| (chr, char_name(chr)))
-            .collect()
-    })
-}
+// Font name constants
+pub const NOTO_SANS: &str = "NotoSans";
+pub const NOTO_SANS_MONO: &str = "NotoSansMono";
+pub const NOTO_SANS_SYMBOLS: &str = "NotoSansSymbols";
+pub const NOTO_SANS_SYMBOLS2: &str = "NotoSansSymbols2";
+pub const NOTO_SANS_MATH: &str = "NotoSansMath";
+pub const NOTO_MUSIC: &str = "NotoMusic";
+pub const NOTO_EMOJI: &str = "NotoEmoji";
 
-fn char_name(chr: char) -> String {
-    special_char_name(chr)
-        .map(|s| s.to_owned())
-        .or_else(|| unicode_names2::name(chr).map(|name| name.to_string().to_lowercase()))
-        .unwrap_or_else(|| "unknown".to_owned())
-}
-
-fn special_char_name(chr: char) -> Option<&'static str> {
-    #[allow(clippy::match_same_arms)] // many "flag"
-    match chr {
-        // Special private-use-area extensions found in `emoji-icon-font.ttf`:
-        // Private use area extensions:
-        '\u{FE4E5}' => Some("flag japan"),
-        '\u{FE4E6}' => Some("flag usa"),
-        '\u{FE4E7}' => Some("flag"),
-        '\u{FE4E8}' => Some("flag"),
-        '\u{FE4E9}' => Some("flag"),
-        '\u{FE4EA}' => Some("flag great britain"),
-        '\u{FE4EB}' => Some("flag"),
-        '\u{FE4EC}' => Some("flag"),
-        '\u{FE4ED}' => Some("flag"),
-        '\u{FE4EE}' => Some("flag south korea"),
-        '\u{FE82C}' => Some("number sign in square"),
-        '\u{FE82E}' => Some("digit one in square"),
-        '\u{FE82F}' => Some("digit two in square"),
-        '\u{FE830}' => Some("digit three in square"),
-        '\u{FE831}' => Some("digit four in square"),
-        '\u{FE832}' => Some("digit five in square"),
-        '\u{FE833}' => Some("digit six in square"),
-        '\u{FE834}' => Some("digit seven in square"),
-        '\u{FE835}' => Some("digit eight in square"),
-        '\u{FE836}' => Some("digit nine in square"),
-        '\u{FE837}' => Some("digit zero in square"),
-
-        // Special private-use-area extensions found in `emoji-icon-font.ttf`:
-        // Web services/operating systems/browsers
-        '\u{E600}' => Some("web-dribbble"),
-        '\u{E601}' => Some("web-stackoverflow"),
-        '\u{E602}' => Some("web-vimeo"),
-        '\u{E603}' => Some("web-twitter"),
-        '\u{E604}' => Some("web-facebook"),
-        '\u{E605}' => Some("web-googleplus"),
-        '\u{E606}' => Some("web-pinterest"),
-        '\u{E607}' => Some("web-tumblr"),
-        '\u{E608}' => Some("web-linkedin"),
-        '\u{E60A}' => Some("web-stumbleupon"),
-        '\u{E60B}' => Some("web-lastfm"),
-        '\u{E60C}' => Some("web-rdio"),
-        '\u{E60D}' => Some("web-spotify"),
-        '\u{E60E}' => Some("web-qq"),
-        '\u{E60F}' => Some("web-instagram"),
-        '\u{E610}' => Some("web-dropbox"),
-        '\u{E611}' => Some("web-evernote"),
-        '\u{E612}' => Some("web-flattr"),
-        '\u{E613}' => Some("web-skype"),
-        '\u{E614}' => Some("web-renren"),
-        '\u{E615}' => Some("web-sina-weibo"),
-        '\u{E616}' => Some("web-paypal"),
-        '\u{E617}' => Some("web-picasa"),
-        '\u{E618}' => Some("os-android"),
-        '\u{E619}' => Some("web-mixi"),
-        '\u{E61A}' => Some("web-behance"),
-        '\u{E61B}' => Some("web-circles"),
-        '\u{E61C}' => Some("web-vk"),
-        '\u{E61D}' => Some("web-smashing"),
-        '\u{E61E}' => Some("web-forrst"),
-        '\u{E61F}' => Some("os-windows"),
-        '\u{E620}' => Some("web-flickr"),
-        '\u{E621}' => Some("web-picassa"),
-        '\u{E622}' => Some("web-deviantart"),
-        '\u{E623}' => Some("web-steam"),
-        '\u{E624}' => Some("web-github"),
-        '\u{E625}' => Some("web-git"),
-        '\u{E626}' => Some("web-blogger"),
-        '\u{E627}' => Some("web-soundcloud"),
-        '\u{E628}' => Some("web-reddit"),
-        '\u{E629}' => Some("web-delicious"),
-        '\u{E62A}' => Some("browser-chrome"),
-        '\u{E62B}' => Some("browser-firefox"),
-        '\u{E62C}' => Some("browser-ie"),
-        '\u{E62D}' => Some("browser-opera"),
-        '\u{E62E}' => Some("browser-safari"),
-        '\u{E62F}' => Some("web-google-drive"),
-        '\u{E630}' => Some("web-wordpress"),
-        '\u{E631}' => Some("web-joomla"),
-        '\u{E632}' => Some("lastfm"),
-        '\u{E633}' => Some("web-foursquare"),
-        '\u{E634}' => Some("web-yelp"),
-        '\u{E635}' => Some("web-drupal"),
-        '\u{E636}' => Some("youtube"),
-        '\u{F189}' => Some("vk"),
-        '\u{F1A6}' => Some("digg"),
-        '\u{F1CA}' => Some("web-vine"),
-        '\u{F8FF}' => Some("os-apple"),
-
-        // Special private-use-area extensions found in `Ubuntu-Light.ttf`
-        '\u{F000}' => Some("uniF000"),
-        '\u{F001}' => Some("fi"),
-        '\u{F002}' => Some("fl"),
-        '\u{F506}' => Some("one seventh"),
-        '\u{F507}' => Some("two sevenths"),
-        '\u{F508}' => Some("three sevenths"),
-        '\u{F509}' => Some("four sevenths"),
-        '\u{F50A}' => Some("five sevenths"),
-        '\u{F50B}' => Some("six sevenths"),
-        '\u{F50C}' => Some("one ninth"),
-        '\u{F50D}' => Some("two ninths"),
-        '\u{F50E}' => Some("four ninths"),
-        '\u{F50F}' => Some("five ninths"),
-        '\u{F510}' => Some("seven ninths"),
-        '\u{F511}' => Some("eight ninths"),
-        '\u{F800}' => Some("zero.alt"),
-        '\u{F801}' => Some("one.alt"),
-        '\u{F802}' => Some("two.alt"),
-        '\u{F803}' => Some("three.alt"),
-        '\u{F804}' => Some("four.alt"),
-        '\u{F805}' => Some("five.alt"),
-        '\u{F806}' => Some("six.alt"),
-        '\u{F807}' => Some("seven.alt"),
-        '\u{F808}' => Some("eight.alt"),
-        '\u{F809}' => Some("nine.alt"),
-        '\u{F80A}' => Some("zero.sups"),
-        '\u{F80B}' => Some("one.sups"),
-        '\u{F80C}' => Some("two.sups"),
-        '\u{F80D}' => Some("three.sups"),
-        '\u{F80E}' => Some("four.sups"),
-        '\u{F80F}' => Some("five.sups"),
-        '\u{F810}' => Some("six.sups"),
-        '\u{F811}' => Some("seven.sups"),
-        '\u{F812}' => Some("eight.sups"),
-        '\u{F813}' => Some("nine.sups"),
-        '\u{F814}' => Some("zero.sinf"),
-        '\u{F815}' => Some("one.sinf"),
-        '\u{F816}' => Some("two.sinf"),
-        '\u{F817}' => Some("three.sinf"),
-        '\u{F818}' => Some("four.sinf"),
-        '\u{F819}' => Some("five.sinf"),
-        '\u{F81A}' => Some("six.sinf"),
-        '\u{F81B}' => Some("seven.sinf"),
-        '\u{F81C}' => Some("eight.sinf"),
-        '\u{F81D}' => Some("nine.sinf"),
-        _ => None,
-    }
-}
-
-fn _other_char_name(chr: char) -> Option<&'static str> {
-    #[allow(clippy::match_same_arms)] // many "flag"
-    match chr {
-        // Manually added
-        '\u{00DF}' => Some("sz"),
-        '\u{1E9E}' => Some("SZ"),
-        '\u{00C4}' => Some("A umlaut"),
-        '\u{00E4}' => Some("a umlaut"),
-        '\u{00CB}' => Some("E umlaut"),
-        '\u{00EB}' => Some("e umlaut"),
-        '\u{00CF}' => Some("I umlaut"),
-        '\u{00EF}' => Some("i umlaut"),
-        '\u{00D6}' => Some("O umlaut"),
-        '\u{00F6}' => Some("o umlaut"),
-        '\u{00DC}' => Some("U umlaut"),
-        '\u{00FC}' => Some("u umlaut"),
-        '\u{0178}' => Some("Y umlaut"),
-        '\u{00FF}' => Some("y umlaut"),
-        _ => None,
-    }
-}
-
-/// Capitalizes the first character.
-fn capitalize(s: &str) -> String {
-    let mut c = s.chars();
-    match c.next() {
-        None => String::new(),
-        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-    }
-}
-
-/// Capitalizes the first character of every word.
-fn title_case(s: &str) -> String {
-    s.to_lowercase()
-        .split_whitespace()
-        .map(|s| {
-            let mut c = s.chars();
-            match c.next() {
-                None => String::new(),
-                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-            }
-        })
-        .collect::<Vec<String>>()
-        .join(" ")
-}
