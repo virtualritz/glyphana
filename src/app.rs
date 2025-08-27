@@ -47,6 +47,8 @@ pub struct GlyphanaApp {
     full_glyph_cache: BTreeMap<char, String>,
     #[serde(skip)]
     showed_glyph_cache: BTreeMap<char, String>,
+    #[serde(skip)]
+    search_active: bool, // Track if search is currently active
     pixels_per_point: f32,
     glyph_scale: GlyphScale,
 }
@@ -71,6 +73,7 @@ impl Default for GlyphanaApp {
             categories: create_default_categories(),
             full_glyph_cache: Default::default(),
             showed_glyph_cache: Default::default(),
+            search_active: false,
             pixels_per_point: Default::default(),
             glyph_scale: GlyphScale::Normal,
         }
@@ -221,12 +224,17 @@ impl GlyphanaApp {
             ))),
         );
 
-        // AIDEV-NOTE: Color emoji support needs NotoColorEmoji.ttf file
-        // The file exists in assets/fonts/ but needs to be enabled properly
-        // This would require additional font rendering support for color glyphs
+        // Add NotoColorEmoji for color emoji support
+        fonts.font_data.insert(
+            NOTO_COLOR_EMOJI.to_owned(),
+            Arc::new(egui::FontData::from_static(include_bytes!(
+                "../assets/NotoColorEmoji.ttf"
+            ))),
+        );
 
         // Configure font families - create base font list to avoid duplication
         let base_fonts = vec![
+            NOTO_COLOR_EMOJI.to_owned(), // Prioritize color emoji
             NOTO_EMOJI.to_owned(),
             EMOJI_ICON.to_owned(),
             NOTO_SANS_SYMBOLS.to_owned(),
@@ -258,6 +266,7 @@ impl GlyphanaApp {
 
         // Named NotoEmoji font family (emoji prioritized)
         let mut emoji_fonts = vec![
+            NOTO_COLOR_EMOJI.to_owned(), // Color emoji first
             NOTO_EMOJI.to_owned(),
             EMOJI_ICON.to_owned(),
             NOTO_SANS.to_owned(),
@@ -271,6 +280,17 @@ impl GlyphanaApp {
         fonts
             .families
             .insert(egui::FontFamily::Name(NOTO_EMOJI.into()), emoji_fonts);
+
+        // Named NotoColorEmoji font family (for testing color emoji specifically)
+        fonts.families.insert(
+            egui::FontFamily::Name(NOTO_COLOR_EMOJI.into()),
+            vec![
+                NOTO_COLOR_EMOJI.to_owned(),
+                NOTO_EMOJI.to_owned(),
+                EMOJI_ICON.to_owned(),
+                NOTO_SANS.to_owned(),
+            ],
+        );
 
         fonts
     }
@@ -361,6 +381,7 @@ impl GlyphanaApp {
                         .clicked()
                     {
                         self.ui_search_text.clear();
+                        self.search_active = false;
                         self.update_search_text_and_cache();
                     }
 
@@ -369,7 +390,17 @@ impl GlyphanaApp {
                         egui::TextEdit::singleline(&mut self.ui_search_text)
                             .hint_text(format!("{} Search", MAGNIFIER)),
                     );
-                    if search_response.changed() {
+
+                    // When search text changes or Enter is pressed, activate search
+                    if search_response.changed()
+                        || (search_response.lost_focus()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter)))
+                    {
+                        if !self.ui_search_text.is_empty() {
+                            // Activate search and select Search category
+                            self.search_active = true;
+                            self.selected_category = search_id();
+                        }
                         self.update_search_text_and_cache();
                     }
 
@@ -421,6 +452,8 @@ impl GlyphanaApp {
                     self.selected_category = egui::Id::new("__none__");
                 } else {
                     self.selected_category = cat_id;
+                    // Deactivate search when selecting a category
+                    self.search_active = false;
                 }
                 self.update_search_text_and_cache();
             }
@@ -441,6 +474,7 @@ impl GlyphanaApp {
                     self.selected_category = egui::Id::new("__none__");
                 } else {
                     self.selected_category = recently_used_id();
+                    self.search_active = false; // Deactivate search
                 }
                 self.update_search_text_and_cache();
             }
@@ -454,22 +488,27 @@ impl GlyphanaApp {
                     self.selected_category = egui::Id::new("__none__");
                 } else {
                     self.selected_category = collection_id();
+                    self.search_active = false; // Deactivate search
                 }
                 self.update_search_text_and_cache();
             }
 
-            if ui
-                .selectable_label(self.selected_category == search_id(), SEARCH)
-                .clicked()
-            {
-                // Toggle selection
-                if self.selected_category == search_id() {
-                    self.selected_category = egui::Id::new("__none__");
-                } else {
-                    self.selected_category = search_id();
+            // Only enable Search category when there's search text
+            ui.add_enabled_ui(!self.ui_search_text.is_empty(), |ui| {
+                if ui
+                    .selectable_label(self.selected_category == search_id(), SEARCH)
+                    .clicked()
+                {
+                    // Toggle selection
+                    if self.selected_category == search_id() {
+                        self.selected_category = egui::Id::new("__none__");
+                    } else {
+                        self.selected_category = search_id();
+                        self.search_active = true; // Activate search when Search category is selected
+                    }
+                    self.update_search_text_and_cache();
                 }
-                self.update_search_text_and_cache();
-            }
+            });
         });
     }
 
@@ -780,7 +819,10 @@ impl GlyphanaApp {
             let mut glyphs: Vec<_> = self.collection.iter().map(|&c| (c, char_name(c))).collect();
             glyphs.sort_by_key(|&(c, _)| c);
             glyphs
-        } else if self.selected_category == search_id() || !self.search_text.is_empty() {
+        } else if self.search_active
+            && (self.selected_category == search_id() || !self.search_text.is_empty())
+        {
+            // Only show search results if search is active
             self.showed_glyph_cache
                 .iter()
                 .map(|(&c, n)| (c, n.clone()))
@@ -982,4 +1024,5 @@ pub const NOTO_SANS_SYMBOLS2: &str = "NotoSansSymbols2";
 pub const NOTO_SANS_MATH: &str = "NotoSansMath";
 pub const NOTO_MUSIC: &str = "NotoMusic";
 pub const NOTO_EMOJI: &str = "NotoEmoji";
+pub const NOTO_COLOR_EMOJI: &str = "NotoColorEmoji";
 pub const EMOJI_ICON: &str = "EmojiIcon";
