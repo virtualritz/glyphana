@@ -224,18 +224,10 @@ impl GlyphanaApp {
             ))),
         );
 
-        // Add NotoColorEmoji for color emoji support
-        fonts.font_data.insert(
-            NOTO_COLOR_EMOJI.to_owned(),
-            Arc::new(egui::FontData::from_static(include_bytes!(
-                "../assets/NotoColorEmoji.ttf"
-            ))),
-        );
-
         // Configure font families - create base font list to avoid duplication
-        let base_fonts = vec![
-            NOTO_COLOR_EMOJI.to_owned(), // Prioritize color emoji
-            NOTO_EMOJI.to_owned(),
+        // For UI: Use black & white emojis
+        let ui_base_fonts = vec![
+            NOTO_EMOJI.to_owned(), // Black & white emoji for UI
             EMOJI_ICON.to_owned(),
             NOTO_SANS_SYMBOLS.to_owned(),
             NOTO_SANS_SYMBOLS2.to_owned(),
@@ -243,31 +235,30 @@ impl GlyphanaApp {
             NOTO_MUSIC.to_owned(),
         ];
 
-        // Proportional font family
+        // Proportional font family (for UI elements)
         let mut proportional_fonts = vec![NOTO_SANS.to_owned()];
-        proportional_fonts.extend(base_fonts.clone());
+        proportional_fonts.extend(ui_base_fonts.clone());
         fonts
             .families
             .insert(egui::FontFamily::Proportional, proportional_fonts);
 
         // Monospace font family
         let mut monospace_fonts = vec![NOTO_SANS_MONO.to_owned()];
-        monospace_fonts.extend(base_fonts.clone());
+        monospace_fonts.extend(ui_base_fonts.clone());
         fonts
             .families
             .insert(egui::FontFamily::Monospace, monospace_fonts);
 
-        // Named NotoSans font family
+        // Named NotoSans font family (for general text)
         let mut noto_sans_fonts = vec![NOTO_SANS.to_owned()];
-        noto_sans_fonts.extend(base_fonts.clone());
+        noto_sans_fonts.extend(ui_base_fonts.clone());
         fonts
             .families
             .insert(egui::FontFamily::Name(NOTO_SANS.into()), noto_sans_fonts);
 
-        // Named NotoEmoji font family (emoji prioritized)
+        // Named NotoEmoji font family (black & white emoji for UI)
         let mut emoji_fonts = vec![
-            NOTO_COLOR_EMOJI.to_owned(), // Color emoji first
-            NOTO_EMOJI.to_owned(),
+            NOTO_EMOJI.to_owned(), // Black & white emoji
             EMOJI_ICON.to_owned(),
             NOTO_SANS.to_owned(),
         ];
@@ -280,17 +271,6 @@ impl GlyphanaApp {
         fonts
             .families
             .insert(egui::FontFamily::Name(NOTO_EMOJI.into()), emoji_fonts);
-
-        // Named NotoColorEmoji font family (for testing color emoji specifically)
-        fonts.families.insert(
-            egui::FontFamily::Name(NOTO_COLOR_EMOJI.into()),
-            vec![
-                NOTO_COLOR_EMOJI.to_owned(),
-                NOTO_EMOJI.to_owned(),
-                EMOJI_ICON.to_owned(),
-                NOTO_SANS.to_owned(),
-            ],
-        );
 
         fonts
     }
@@ -981,8 +961,10 @@ impl GlyphanaApp {
 
         // Draw the glyph - use appropriate font family for emoji
         // Check if the character is likely an emoji based on Unicode ranges
-        let font_family = if self.selected_char as u32 >= 0x1F300 {
-            // Emoji ranges typically start around U+1F300
+        let font_family = if self.selected_char as u32 >= 0x1F300
+            || (self.selected_char as u32 >= 0x2600 && self.selected_char as u32 <= 0x27BF)
+        {
+            // Emoji ranges
             egui::FontFamily::Name(NOTO_EMOJI.into())
         } else {
             egui::FontFamily::Name(NOTO_SANS.into())
@@ -1062,5 +1044,4 @@ pub const NOTO_SANS_SYMBOLS2: &str = "NotoSansSymbols2";
 pub const NOTO_SANS_MATH: &str = "NotoSansMath";
 pub const NOTO_MUSIC: &str = "NotoMusic";
 pub const NOTO_EMOJI: &str = "NotoEmoji";
-pub const NOTO_COLOR_EMOJI: &str = "NotoColorEmoji";
 pub const EMOJI_ICON: &str = "EmojiIcon";
