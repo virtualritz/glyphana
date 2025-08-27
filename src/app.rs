@@ -14,6 +14,13 @@ use crate::ui::{
     SEARCH, SUBSET, collection_id, recently_used_id, search_id,
 };
 
+// Inspector view mode - either related characters or font variations
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum InspectorViewMode {
+    RelatedCharacters,
+    FontVariations,
+}
+
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Deserialize, Serialize)]
 #[serde(default)]
@@ -51,6 +58,10 @@ pub struct GlyphanaApp {
     search_active: bool, // Track if search is currently active
     pixels_per_point: f32,
     glyph_scale: GlyphScale,
+
+    // Inspector view mode - either related characters or font variations
+    #[serde(skip)]
+    inspector_view_mode: InspectorViewMode,
 }
 
 impl Default for GlyphanaApp {
@@ -76,6 +87,7 @@ impl Default for GlyphanaApp {
             search_active: false,
             pixels_per_point: Default::default(),
             glyph_scale: GlyphScale::Normal,
+            inspector_view_mode: InspectorViewMode::RelatedCharacters,
         }
     }
 }
@@ -492,6 +504,116 @@ impl GlyphanaApp {
         });
     }
 
+    // Get related characters for a given character
+    fn get_related_characters(&self, ch: char) -> Vec<char> {
+        let mut related = Vec::new();
+        let code_point = ch as u32;
+
+        // Add case variations
+        if ch.is_lowercase() {
+            for upper in ch.to_uppercase() {
+                if upper != ch {
+                    related.push(upper);
+                }
+            }
+        } else if ch.is_uppercase() {
+            for lower in ch.to_lowercase() {
+                if lower != ch {
+                    related.push(lower);
+                }
+            }
+        }
+
+        // Add nearby characters in the same block
+        if let Some(block) = unicode_blocks::find_unicode_block(ch) {
+            let start = block.start().max(code_point.saturating_sub(3));
+            let end = block.end().min(code_point + 4);
+
+            for cp in start..=end {
+                if cp != code_point {
+                    if let Some(nearby_char) = char::from_u32(cp) {
+                        if !related.contains(&nearby_char) {
+                            related.push(nearby_char);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add diacritic variations for Latin characters
+        if ch.is_ascii_alphabetic() {
+            let base_char = ch.to_ascii_lowercase();
+            let diacritic_variations: Vec<(char, Vec<char>)> = vec![
+                ('a', vec!['à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą']),
+                ('e', vec!['è', 'é', 'ê', 'ë', 'ē', 'ė', 'ę', 'ě']),
+                ('i', vec!['ì', 'í', 'î', 'ï', 'ī', 'į', 'ı']),
+                ('o', vec!['ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ō', 'ő']),
+                ('u', vec!['ù', 'ú', 'û', 'ü', 'ū', 'ů', 'ű', 'ų']),
+                ('c', vec!['ç', 'ć', 'č']),
+                ('n', vec!['ñ', 'ń', 'ň']),
+                ('s', vec!['ś', 'š', 'ş']),
+                ('z', vec!['ź', 'ž', 'ż']),
+            ];
+
+            for (base, variations) in diacritic_variations {
+                if base_char == base {
+                    for var in variations {
+                        if !related.contains(&var) {
+                            related.push(var);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Limit to first 12 related characters for UI space
+        related.truncate(12);
+        related
+    }
+
+    // Get available fonts that have the character
+    fn get_font_variations(&self, ch: char) -> Vec<(&'static str, egui::FontFamily)> {
+        let mut fonts = Vec::new();
+
+        // Check which fonts can display this character
+        fonts.push((NOTO_SANS, egui::FontFamily::Name(NOTO_SANS.into())));
+
+        // Add symbol fonts for symbol characters
+        if ch as u32 >= 0x2000 {
+            fonts.push((
+                NOTO_SANS_SYMBOLS,
+                egui::FontFamily::Name(NOTO_SANS_SYMBOLS.into()),
+            ));
+            fonts.push((
+                NOTO_SANS_SYMBOLS2,
+                egui::FontFamily::Name(NOTO_SANS_SYMBOLS2.into()),
+            ));
+        }
+
+        // Add math font for mathematical symbols
+        if (ch as u32 >= 0x2200 && ch as u32 <= 0x22FF)
+            || (ch as u32 >= 0x2100 && ch as u32 <= 0x214F)
+        {
+            fonts.push((
+                NOTO_SANS_MATH,
+                egui::FontFamily::Name(NOTO_SANS_MATH.into()),
+            ));
+        }
+
+        // Add music font for musical symbols
+        if ch as u32 >= 0x1D100 && ch as u32 <= 0x1D1FF {
+            fonts.push((NOTO_MUSIC, egui::FontFamily::Name(NOTO_MUSIC.into())));
+        }
+
+        // Add emoji font for emoji characters
+        if ch as u32 >= 0x1F300 || (ch as u32 >= 0x2600 && ch as u32 <= 0x27BF) {
+            fonts.push((NOTO_EMOJI, egui::FontFamily::Name(NOTO_EMOJI.into())));
+        }
+
+        fonts
+    }
+
     fn render_right_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::right("character_preview").show(ctx, |ui| {
             // Large character preview with paint_glyph
@@ -567,12 +689,180 @@ impl GlyphanaApp {
                         } else if ui.button("Remove from Collection").clicked() {
                             self.collection.remove(&self.selected_char);
                         }
+
+                        ui.separator();
+
+                        // Toggle between Related Characters and Font Variations
+                        ui.horizontal(|ui| {
+                            if ui
+                                .selectable_label(
+                                    self.inspector_view_mode
+                                        == InspectorViewMode::RelatedCharacters,
+                                    "Related",
+                                )
+                                .clicked()
+                            {
+                                self.inspector_view_mode = InspectorViewMode::RelatedCharacters;
+                            }
+
+                            ui.separator();
+
+                            if ui
+                                .selectable_label(
+                                    self.inspector_view_mode == InspectorViewMode::FontVariations,
+                                    "Font Variations",
+                                )
+                                .clicked()
+                            {
+                                self.inspector_view_mode = InspectorViewMode::FontVariations;
+                            }
+                        });
+
+                        ui.separator();
+
+                        // Show the selected view
+                        match self.inspector_view_mode {
+                            InspectorViewMode::RelatedCharacters => {
+                                self.render_related_characters(ui);
+                            }
+                            InspectorViewMode::FontVariations => {
+                                self.render_font_variations(ui);
+                            }
+                        }
                     } else {
                         ui.label("Select a character to see details");
                     }
                 },
             );
         });
+    }
+
+    fn render_related_characters(&mut self, ui: &mut egui::Ui) {
+        let related_chars = self.get_related_characters(self.selected_char);
+
+        if related_chars.is_empty() {
+            ui.label("No related characters found");
+        } else {
+            // Create a grid for related characters
+            let columns = 3;
+            let button_size = ui.available_width() / columns as f32 - ui.spacing().item_spacing.x;
+
+            egui::Grid::new("related_chars_grid")
+                .num_columns(columns)
+                .spacing([ui.spacing().item_spacing.x, ui.spacing().item_spacing.y])
+                .show(ui, |ui| {
+                    for (i, &ch) in related_chars.iter().enumerate() {
+                        let response = ui.allocate_response(
+                            egui::Vec2::splat(button_size),
+                            egui::Sense::click(),
+                        );
+
+                        let rect = response.rect;
+                        let painter = ui.painter();
+
+                        // Draw background
+                        let bg_color = if response.hovered() {
+                            ui.visuals().widgets.hovered.bg_fill
+                        } else {
+                            ui.visuals().extreme_bg_color
+                        };
+                        painter.rect_filled(rect, 4.0, bg_color);
+
+                        // Draw character
+                        painter.text(
+                            rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            ch,
+                            egui::FontId::new(24.0, egui::FontFamily::Name(NOTO_SANS.into())),
+                            ui.visuals().text_color(),
+                        );
+
+                        // Draw character code below
+                        let code_text = format!("U+{:04X}", ch as u32);
+                        painter.text(
+                            rect.center() + egui::Vec2::new(0.0, button_size * 0.3),
+                            egui::Align2::CENTER_CENTER,
+                            code_text,
+                            egui::FontId::new(9.0, egui::FontFamily::Monospace),
+                            ui.visuals().weak_text_color(),
+                        );
+
+                        // Handle click
+                        if response.clicked() {
+                            self.selected_char = ch;
+                            self.add_to_recently_used(ch);
+                        }
+
+                        // Show tooltip
+                        if response.hovered() {
+                            response.on_hover_text(format!(
+                                "{}\nU+{:04X}\nClick to select",
+                                char_name(ch),
+                                ch as u32
+                            ));
+                        }
+
+                        // End row every 3 characters
+                        if (i + 1) % columns == 0 && i < related_chars.len() - 1 {
+                            ui.end_row();
+                        }
+                    }
+                });
+        }
+    }
+
+    fn render_font_variations(&mut self, ui: &mut egui::Ui) {
+        let fonts = self.get_font_variations(self.selected_char);
+
+        egui::ScrollArea::vertical()
+            .max_height(ui.available_height())
+            .show(ui, |ui| {
+                for (font_name, font_family) in fonts {
+                    ui.horizontal(|ui| {
+                        // Show font name label
+                        ui.label(
+                            egui::RichText::new(font_name)
+                                .size(10.0)
+                                .color(ui.visuals().weak_text_color()),
+                        );
+                    });
+
+                    // Draw the character in this font
+                    let response = ui.allocate_response(
+                        egui::Vec2::new(ui.available_width(), 40.0),
+                        egui::Sense::click(),
+                    );
+
+                    let rect = response.rect;
+                    let painter = ui.painter();
+
+                    // Draw background
+                    let bg_color = if response.hovered() {
+                        ui.visuals().widgets.hovered.bg_fill
+                    } else {
+                        ui.visuals().extreme_bg_color
+                    };
+                    painter.rect_filled(rect, 4.0, bg_color);
+
+                    // Draw the character
+                    painter.text(
+                        rect.center(),
+                        egui::Align2::CENTER_CENTER,
+                        self.selected_char,
+                        egui::FontId::new(28.0, font_family.clone()),
+                        ui.visuals().text_color(),
+                    );
+
+                    // Copy on click
+                    if response.clicked() {
+                        ui.ctx().copy_text(self.selected_char.to_string());
+                    }
+
+                    response.on_hover_text("Click to copy character");
+
+                    ui.separator();
+                }
+            });
     }
 
     fn render_central_panel(&mut self, ctx: &egui::Context) {
