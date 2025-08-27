@@ -10,8 +10,8 @@ use crate::categories::{
 use crate::glyph::{GlyphScale, available_characters, char_name};
 use crate::search::{SearchEngine, SearchParams};
 use crate::ui::{
-    COLLECTION, MAGNIFIER, NAME_BADGE, RECENTLY_USED, SEARCH, collection_id, recently_used_id,
-    search_id,
+    CANCELLATION, COLLECTION, HAMBURGER, LOWER_UPPER_CASE, MAGNIFIER, NAME_BADGE, RECENTLY_USED,
+    SEARCH, SUBSET, collection_id, recently_used_id, search_id,
 };
 
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
@@ -310,65 +310,79 @@ impl eframe::App for GlyphanaApp {
 impl GlyphanaApp {
     fn render_top_panel(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(MAGNIFIER.to_string());
+            #[allow(deprecated)]
+            egui::menu::bar(ui, |ui| {
+                // Hamburger menu
+                ui.menu_button(HAMBURGER.to_string(), |ui| {
+                    #[cfg(debug_assertions)]
+                    if ui.button("Reset App State").clicked() {
+                        *self = Self::default();
+                        ui.close_kind(egui::UiKind::Menu);
+                    }
 
-                let search_response = ui.text_edit_singleline(&mut self.ui_search_text);
-                if search_response.changed() {
-                    self.update_search_text_and_cache();
-                }
+                    ui.separator();
 
-                if ui.button("Clear").clicked() {
-                    self.ui_search_text.clear();
-                    self.update_search_text_and_cache();
-                }
+                    ui.add_enabled_ui(false, |ui| ui.button("Glyph Size"));
+                    ui.vertical(|ui| {
+                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Tiny, "Tiny");
+                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Small, "Small");
+                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Normal, "Normal");
+                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Large, "Large");
+                        ui.radio_value(&mut self.glyph_scale, GlyphScale::Huge, "Huge");
+                    });
 
-                ui.separator();
+                    ui.separator();
 
-                ui.checkbox(
-                    &mut self.search_only_categories,
-                    "Search only selected category",
-                );
-                ui.checkbox(
-                    &mut self.search_name,
-                    format!("{} Search names", NAME_BADGE),
-                );
-                ui.checkbox(&mut self.case_sensitive, "Case sensitive");
+                    if ui.button("Clear Recently Used").clicked() {
+                        self.recently_used.clear();
+                        ui.close_kind(egui::UiKind::Menu);
+                    }
 
-                ui.separator();
+                    ui.separator();
 
-                ui.label("Size:");
-                ui.horizontal(|ui| {
+                    ui.add_enabled_ui(false, |ui| ui.button("Export Collection…"));
+
+                    ui.separator();
+
+                    if ui.button("Quit").clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                });
+
+                // Search bar and controls on the right
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Clear button with icon
                     if ui
-                        .selectable_label(self.glyph_scale == GlyphScale::Tiny, "Tiny")
+                        .button(CANCELLATION.to_string())
+                        .on_hover_text("Clear Search")
                         .clicked()
                     {
-                        self.glyph_scale = GlyphScale::Tiny;
+                        self.ui_search_text.clear();
+                        self.update_search_text_and_cache();
                     }
-                    if ui
-                        .selectable_label(self.glyph_scale == GlyphScale::Small, "Small")
-                        .clicked()
-                    {
-                        self.glyph_scale = GlyphScale::Small;
+
+                    // Search field
+                    let search_response = ui.add(
+                        egui::TextEdit::singleline(&mut self.ui_search_text)
+                            .hint_text(format!("{} Search", MAGNIFIER)),
+                    );
+                    if search_response.changed() {
+                        self.update_search_text_and_cache();
                     }
-                    if ui
-                        .selectable_label(self.glyph_scale == GlyphScale::Normal, "Normal")
-                        .clicked()
-                    {
-                        self.glyph_scale = GlyphScale::Normal;
-                    }
-                    if ui
-                        .selectable_label(self.glyph_scale == GlyphScale::Large, "Large")
-                        .clicked()
-                    {
-                        self.glyph_scale = GlyphScale::Large;
-                    }
-                    if ui
-                        .selectable_label(self.glyph_scale == GlyphScale::Huge, "Huge")
-                        .clicked()
-                    {
-                        self.glyph_scale = GlyphScale::Huge;
-                    }
+
+                    // Case sensitive toggle
+                    ui.toggle_value(&mut self.case_sensitive, LOWER_UPPER_CASE.to_string())
+                        .on_hover_text("Case Sensitive");
+
+                    // Search names toggle
+                    ui.add_enabled_ui(!self.case_sensitive, |ui| {
+                        ui.toggle_value(&mut self.search_name, NAME_BADGE.to_string())
+                            .on_hover_text("Search Glyph Names");
+                    });
+
+                    // Search only in categories toggle
+                    ui.toggle_value(&mut self.search_only_categories, SUBSET.to_string())
+                        .on_hover_text("Search Only Selected Category");
                 });
             });
         });
@@ -475,8 +489,18 @@ impl GlyphanaApp {
 
         ui.separator();
 
+        // Large character preview with ascender/descender lines
+        let rect = ui.available_rect_before_wrap();
+        let scale = rect.width().min(rect.height() * 0.5);
+        let (response, painter) =
+            ui.allocate_painter(egui::Vec2::new(scale, scale * 1.2), egui::Sense::click());
+
+        self.paint_glyph(scale * 0.8, ui, response, painter);
+
+        ui.separator();
+
         // Display character info
-        ui.heading(format!("{}", self.selected_char));
+        ui.heading(format!("Character: {}", self.selected_char));
         ui.label(format!("Name: {}", char_name(self.selected_char)));
         ui.label(format!(
             "Code: U+{:04X} ({})",
@@ -599,7 +623,10 @@ impl GlyphanaApp {
                     let response = ui
                         .allocate_response(egui::vec2(base_size, base_size), egui::Sense::click());
 
-                    if response.clicked() {
+                    // Handle double-click to copy
+                    if response.double_clicked() {
+                        ui.ctx().copy_text(chr.to_string());
+                    } else if response.clicked() {
                         self.selected_char = chr;
                         self.add_to_recently_used(chr);
                     }
@@ -626,8 +653,14 @@ impl GlyphanaApp {
                         egui::Color32::WHITE,
                     );
 
-                    // Show tooltip
-                    response.on_hover_text(&name);
+                    // Show enhanced tooltip with more info
+                    response.on_hover_ui(|ui| {
+                        ui.label(egui::RichText::new(chr.to_string()).size(24.0));
+                        ui.label(&name);
+                        ui.label(format!("U+{:04X}", chr as u32));
+                        ui.separator();
+                        ui.label("Double-click to copy");
+                    });
                 }
             });
         });
@@ -722,6 +755,116 @@ impl GlyphanaApp {
         while self.recently_used.len() > self.recently_used_max_len {
             self.recently_used.pop_back();
         }
+    }
+
+    fn paint_glyph(
+        &mut self,
+        scale: f32,
+        ui: &mut egui::Ui,
+        response: egui::Response,
+        painter: egui::Painter,
+    ) {
+        let rect = response.rect;
+        let center = rect.center();
+        let glyph_scale = scale * 0.8;
+        let offset = scale * 0.12;
+
+        let left = rect.min.x + offset;
+        let top = rect.min.y + offset;
+        let right = rect.max.x - offset;
+
+        // Try to get font metrics
+        let font_data = include_bytes!("../assets/NotoSans-Regular.otf");
+        let v_metrics = if let Some(font) = rusttype::Font::try_from_bytes(font_data) {
+            font.v_metrics(rusttype::Scale::uniform(glyph_scale))
+        } else {
+            // Fallback metrics if font loading fails
+            rusttype::VMetrics {
+                ascent: glyph_scale * 0.8,
+                descent: -glyph_scale * 0.2,
+                line_gap: glyph_scale * 0.1,
+            }
+        };
+
+        let visuals = &ui.ctx().style().visuals;
+        let dark_mode = visuals.dark_mode;
+
+        let glyph_color = if dark_mode {
+            egui::Color32::WHITE
+        } else {
+            egui::Color32::BLACK
+        };
+
+        let mut stroke = visuals.widgets.noninteractive.fg_stroke;
+        let info_text_color = stroke.color;
+        stroke.color = stroke
+            .color
+            .linear_multiply(info_text_color.r() as f32 / 255.0 * 0.3);
+
+        // Draw the glyph
+        painter.text(
+            egui::Pos2::new(center.x, top + scale + glyph_scale * 0.023),
+            egui::Align2::CENTER_BOTTOM,
+            self.selected_char,
+            egui::FontId::new(glyph_scale, egui::FontFamily::Name(NOTO_SANS.into())),
+            glyph_color,
+        );
+
+        // Draw ascender line
+        painter.line_segment(
+            [
+                egui::Pos2::new(left, top + glyph_scale - v_metrics.ascent),
+                egui::Pos2::new(right, top + glyph_scale - v_metrics.ascent),
+            ],
+            stroke,
+        );
+
+        // Label for ascender
+        painter.text(
+            egui::Pos2::new(left - 5.0, top + glyph_scale - v_metrics.ascent),
+            egui::Align2::RIGHT_CENTER,
+            "ascender",
+            egui::FontId::new(10.0, egui::FontFamily::Proportional),
+            stroke.color,
+        );
+
+        // Draw baseline
+        painter.line_segment(
+            [
+                egui::Pos2::new(left, top + glyph_scale),
+                egui::Pos2::new(right, top + glyph_scale),
+            ],
+            stroke,
+        );
+
+        // Label for baseline
+        painter.text(
+            egui::Pos2::new(left - 5.0, top + glyph_scale),
+            egui::Align2::RIGHT_CENTER,
+            "baseline",
+            egui::FontId::new(10.0, egui::FontFamily::Proportional),
+            stroke.color,
+        );
+
+        // Draw descender line
+        painter.line_segment(
+            [
+                egui::Pos2::new(left, top + glyph_scale - v_metrics.descent),
+                egui::Pos2::new(right, top + glyph_scale - v_metrics.descent),
+            ],
+            stroke,
+        );
+
+        // Label for descender
+        painter.text(
+            egui::Pos2::new(left - 5.0, top + glyph_scale - v_metrics.descent),
+            egui::Align2::RIGHT_CENTER,
+            "descender",
+            egui::FontId::new(10.0, egui::FontFamily::Proportional),
+            stroke.color,
+        );
+
+        ui.expand_to_include_rect(painter.clip_rect());
     }
 }
 
