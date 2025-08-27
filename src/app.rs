@@ -298,8 +298,11 @@ impl eframe::App for GlyphanaApp {
         // Top panel with search and controls
         self.render_top_panel(ctx);
 
-        // Side panel with categories
+        // Left side panel with categories
         self.render_side_panel(ctx);
+
+        // Right side panel with character preview (always visible)
+        self.render_right_panel(ctx);
 
         // Central panel with glyphs
         self.render_central_panel(ctx);
@@ -450,18 +453,98 @@ impl GlyphanaApp {
         });
     }
 
-    fn render_central_panel(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // Show single glyph view if a character is selected
-            if self.selected_char != '\0' {
-                self.render_single_glyph_view(ui);
-            } else {
-                self.render_glyph_grid(ui);
-            }
+    fn render_right_panel(&mut self, ctx: &egui::Context) {
+        egui::SidePanel::right("character_preview").show(ctx, |ui| {
+            // Large character preview with paint_glyph
+            let rect = ui.available_rect_before_wrap();
+            let scale = rect.width().min(rect.height() * 0.4);
+
+            let (response, painter) =
+                ui.allocate_painter(egui::Vec2::new(scale, scale * 1.2), egui::Sense::click());
+
+            self.paint_glyph(scale * 0.8, ui, response, painter);
+
+            ui.separator();
+
+            // Display character info
+            ui.with_layout(
+                egui::Layout::top_down_justified(egui::Align::Center),
+                |ui| {
+                    // Character name
+                    if self.selected_char != '\0' {
+                        ui.heading(self.selected_char.to_string());
+
+                        let name = char_name(self.selected_char);
+                        ui.label(&name);
+
+                        ui.separator();
+
+                        // Unicode codepoint
+                        egui::Grid::new("glyph_codepoints")
+                            .num_columns(2)
+                            .striped(true)
+                            .show(ui, |ui| {
+                                ui.label("Unicode:");
+                                let unicode_string = format!("U+{:04X}", self.selected_char as u32);
+                                if ui
+                                    .button(egui::RichText::new(&unicode_string).monospace())
+                                    .on_hover_text("Click to copy Unicode")
+                                    .clicked()
+                                {
+                                    ui.ctx().copy_text(unicode_string);
+                                }
+                                ui.end_row();
+
+                                ui.label("Decimal:");
+                                let decimal_string = format!("{}", self.selected_char as u32);
+                                if ui
+                                    .button(egui::RichText::new(&decimal_string).monospace())
+                                    .on_hover_text("Click to copy decimal")
+                                    .clicked()
+                                {
+                                    ui.ctx().copy_text(decimal_string);
+                                }
+                                ui.end_row();
+
+                                ui.label("HTML:");
+                                let html_string = format!("&#x{:04X};", self.selected_char as u32);
+                                if ui
+                                    .button(egui::RichText::new(&html_string).monospace())
+                                    .on_hover_text("Click to copy HTML entity")
+                                    .clicked()
+                                {
+                                    ui.ctx().copy_text(html_string);
+                                }
+                                ui.end_row();
+                            });
+
+                        ui.separator();
+
+                        // Collection button
+                        if !self.collection.contains(&self.selected_char) {
+                            if ui.button("Add to Collection").clicked() {
+                                self.collection.insert(self.selected_char);
+                            }
+                        } else if ui.button("Remove from Collection").clicked() {
+                            self.collection.remove(&self.selected_char);
+                        }
+                    } else {
+                        ui.label("Select a character to see details");
+                    }
+                },
+            );
         });
     }
 
-    fn render_single_glyph_view(&mut self, ui: &mut egui::Ui) {
+    fn render_central_panel(&mut self, ctx: &egui::Context) {
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // Always show the glyph grid
+            self.render_glyph_grid(ui);
+        });
+    }
+
+    #[allow(dead_code)]
+    fn _render_single_glyph_view(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             if ui.button("← Back").clicked() {
                 self.selected_char = '\0';
@@ -510,10 +593,11 @@ impl GlyphanaApp {
         ui.separator();
 
         // Font preview with proper ascender/descender lines
-        self.render_font_preview(ui);
+        self._render_font_preview(ui);
     }
 
-    fn render_font_preview(&self, ui: &mut egui::Ui) {
+    #[allow(dead_code)]
+    fn _render_font_preview(&self, ui: &mut egui::Ui) {
         use rusttype::{Font, Scale};
 
         // Try to load a font for metrics
