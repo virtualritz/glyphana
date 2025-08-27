@@ -898,7 +898,7 @@ checksum = "c3531d702d6c1a3ba92a5fb55a404c7b8c476c8e7ca249951077afcbe4bc807f"
 
 [[package]]
 name = "glyphana"
-version = "0.1.4"
+version = "0.2.0"
 dependencies = [
  "ahash",
  "bytemuck",
