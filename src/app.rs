@@ -416,7 +416,12 @@ impl GlyphanaApp {
             );
 
             if let Some(cat_id) = category_clicked {
-                self.selected_category = cat_id;
+                // Toggle selection - if already selected, deselect (set to invalid ID)
+                if self.selected_category == cat_id {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = cat_id;
+                }
                 self.update_search_text_and_cache();
             }
 
@@ -431,7 +436,12 @@ impl GlyphanaApp {
                 .selectable_label(self.selected_category == recently_used_id(), RECENTLY_USED)
                 .clicked()
             {
-                self.selected_category = recently_used_id();
+                // Toggle selection
+                if self.selected_category == recently_used_id() {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = recently_used_id();
+                }
                 self.update_search_text_and_cache();
             }
 
@@ -439,7 +449,12 @@ impl GlyphanaApp {
                 .selectable_label(self.selected_category == collection_id(), COLLECTION)
                 .clicked()
             {
-                self.selected_category = collection_id();
+                // Toggle selection
+                if self.selected_category == collection_id() {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = collection_id();
+                }
                 self.update_search_text_and_cache();
             }
 
@@ -447,7 +462,12 @@ impl GlyphanaApp {
                 .selectable_label(self.selected_category == search_id(), SEARCH)
                 .clicked()
             {
-                self.selected_category = search_id();
+                // Toggle selection
+                if self.selected_category == search_id() {
+                    self.selected_category = egui::Id::new("__none__");
+                } else {
+                    self.selected_category = search_id();
+                }
                 self.update_search_text_and_cache();
             }
         });

@@ -77,10 +77,16 @@ impl SearchEngine {
             result
         };
 
-        // Check for single character search (exact match or Unicode block)
+        // Don't treat single character as special pattern if it's a regular letter
+        // This allows normal case-sensitive/insensitive search to work
         if text.chars().count() == 1 {
             if let Some(chr) = text.chars().next() {
-                // First, try exact character match
+                // Skip special handling for alphabetic characters to allow case sensitivity
+                if chr.is_alphabetic() {
+                    return None;
+                }
+
+                // For non-alphabetic single characters, try exact match
                 if let Some(name) = full_cache.get(&chr) {
                     return Some(single_char_result(chr, name));
                 }
@@ -170,18 +176,16 @@ impl SearchEngine {
     }
 
     fn apply_search_filters(
-        mut cache: BTreeMap<char, String>,
+        cache: BTreeMap<char, String>,
         params: &SearchParams,
     ) -> BTreeMap<char, String> {
-        // Apply fuzzy search if enabled
+        // If search_name is enabled, do fuzzy name search
         if params.search_name && !params.split_text.is_empty() {
-            cache = Self::fuzzy_search(cache, params);
+            Self::fuzzy_search(cache, params)
+        } else {
+            // Otherwise do character-based skeleton search
+            Self::skeleton_search(cache, params)
         }
-
-        // Apply skeleton search
-        cache = Self::skeleton_search(cache, params);
-
-        cache
     }
 
     fn fuzzy_search(
@@ -192,7 +196,20 @@ impl SearchEngine {
 
         cache
             .into_iter()
-            .filter(|(_, name)| {
+            .filter(|(chr, name)| {
+                // Also check if the character itself matches
+                let chr_str = chr.to_string();
+                if params.case_sensitive {
+                    if chr_str.contains(&params.text) {
+                        return true;
+                    }
+                } else {
+                    if chr_str.to_lowercase().contains(&params.text.to_lowercase()) {
+                        return true;
+                    }
+                }
+
+                // Check name
                 let search_name = if params.case_sensitive {
                     name.clone()
                 } else {
@@ -207,20 +224,32 @@ impl SearchEngine {
 
                 // Check if all search terms match with fuzzy logic
                 search_terms.iter().all(|term| {
-                    // First try exact substring match
+                    // First try exact substring match anywhere in the name
                     if search_name.contains(term) {
                         return true;
                     }
 
-                    // Then try fuzzy match on words
+                    // Then try fuzzy match on individual words
                     search_name.split_whitespace().any(|word| {
                         if word.len() < 3 || term.len() < 3 {
-                            // For very short strings, require exact match
-                            word == term
+                            // For very short strings, also check if word starts with term
+                            word == term || word.starts_with(term)
                         } else {
                             // Use edit distance for longer strings
                             let distance = word.sz_edit_distance(term);
-                            distance <= MAX_EDIT_DISTANCE
+                            // For case sensitive, require exact match or very close match
+                            // but not just case differences
+                            if params.case_sensitive && distance > 0 {
+                                // If they're the same when lowercased, it's just a case difference
+                                // which shouldn't match in case-sensitive mode
+                                if word.to_lowercase() == term.to_lowercase() {
+                                    false
+                                } else {
+                                    distance <= MAX_EDIT_DISTANCE
+                                }
+                            } else {
+                                distance <= MAX_EDIT_DISTANCE
+                            }
                         }
                     })
                 })
@@ -263,5 +292,276 @@ impl SearchEngine {
                 char_matches || name_matches
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    fn create_test_cache() -> BTreeMap<char, String> {
+        let mut cache = BTreeMap::new();
+
+        // Add some test characters with names
+        cache.insert('A', "Latin Capital Letter A".to_string());
+        cache.insert('a', "Latin Small Letter a".to_string());
+        cache.insert('-', "Hyphen Minus".to_string()); // Change to match word boundary better
+        cache.insert('‐', "Hyphen".to_string());
+        cache.insert('­', "Soft Hyphen".to_string());
+        cache.insert('—', "Em Dash".to_string());
+        cache.insert('–', "En Dash".to_string());
+        cache.insert('α', "Greek Small Letter Alpha".to_string());
+        cache.insert('Α', "Greek Capital Letter Alpha".to_string());
+        cache.insert('β', "Greek Small Letter Beta".to_string());
+        cache.insert('😀', "Grinning Face".to_string());
+        cache.insert('🔍', "Magnifying Glass Tilted Left".to_string());
+        cache.insert(' ', "Space".to_string());
+        cache.insert('\u{00A0}', "No-break Space".to_string());
+        cache.insert('1', "Digit One".to_string());
+        cache.insert('2', "Digit Two".to_string());
+        cache.insert('+', "Plus Sign".to_string());
+        cache.insert('=', "Equals Sign".to_string());
+
+        cache
+    }
+
+    #[test]
+    fn test_empty_search_returns_all() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("".to_string(), false, false, false);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert_eq!(results.len(), cache.len());
+        assert_eq!(results, cache);
+    }
+
+    #[test]
+    fn test_single_character_exact_match() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("A".to_string(), false, false, true);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert_eq!(results.len(), 1);
+        assert!(results.contains_key(&'A'));
+    }
+
+    #[test]
+    fn test_case_insensitive_character_search() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("a".to_string(), false, false, false);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should find both 'A' and 'a' when case insensitive
+        assert!(results.contains_key(&'A'));
+        assert!(results.contains_key(&'a'));
+    }
+
+    #[test]
+    fn test_case_sensitive_character_search() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("a".to_string(), false, false, true);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should only find 'a' when case sensitive
+        assert!(!results.contains_key(&'A'));
+        assert!(results.contains_key(&'a'));
+    }
+
+    #[test]
+    fn test_search_by_name_substring() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("hyphen".to_string(), false, true, false);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should find all hyphen-related characters
+        assert!(results.contains_key(&'-')); // Hyphen Minus
+        assert!(results.contains_key(&'‐')); // Hyphen
+        assert!(results.contains_key(&'­')); // Soft Hyphen
+        assert!(!results.contains_key(&'—')); // Em Dash (doesn't contain "hyphen")
+    }
+
+    #[test]
+    fn test_search_by_name_case_sensitive() {
+        let cache = create_test_cache();
+
+        // Test with correct case "Greek"
+        let params = SearchParams::new("Greek".to_string(), false, true, true);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should find Greek letters (name contains "Greek")
+        assert!(results.contains_key(&'α'));
+        assert!(results.contains_key(&'Α'));
+        assert!(results.contains_key(&'β'));
+
+        // Test that lowercase "greek" doesn't match when case sensitive
+        let params_lower = SearchParams::new("greek".to_string(), false, true, true);
+        let results_lower = SearchEngine::search(&params_lower, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results_lower.len(), 0);
+    }
+
+    #[test]
+    fn test_search_by_name_case_insensitive() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("greek".to_string(), false, true, false);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should find Greek letters regardless of case
+        assert!(results.contains_key(&'α'));
+        assert!(results.contains_key(&'Α'));
+        assert!(results.contains_key(&'β'));
+    }
+
+    #[test]
+    fn test_hex_code_search() {
+        let cache = create_test_cache();
+
+        // Test U+ format
+        let params = SearchParams::new("U+0041".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results.len(), 1);
+        assert!(results.contains_key(&'A'));
+
+        // Test 0x format
+        let params = SearchParams::new("0x41".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results.len(), 1);
+        assert!(results.contains_key(&'A'));
+
+        // Test plain hex
+        let params = SearchParams::new("41".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results.len(), 1);
+        assert!(results.contains_key(&'A'));
+    }
+
+    #[test]
+    fn test_decimal_code_search() {
+        let cache = create_test_cache();
+
+        // 65 is the decimal code for 'A'
+        let params = SearchParams::new("65".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert_eq!(results.len(), 1);
+        assert!(results.contains_key(&'A'));
+    }
+
+    #[test]
+    fn test_multiple_word_search() {
+        let cache = create_test_cache();
+        let params = SearchParams::new("latin letter".to_string(), false, true, false);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should find Latin letters
+        assert!(results.contains_key(&'A'));
+        assert!(results.contains_key(&'a'));
+        // Should not find Greek letters or other characters
+        assert!(!results.contains_key(&'α'));
+        assert!(!results.contains_key(&'-'));
+    }
+
+    #[test]
+    fn test_fuzzy_search_with_typo() {
+        let cache = create_test_cache();
+        // "hypen" is 1 edit away from "hyphen" (missing 'h')
+        let params = SearchParams::new("hypen".to_string(), false, true, false);
+
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should still find hyphen-related characters due to fuzzy matching
+        assert!(results.contains_key(&'-')); // Hyphen Minus
+        assert!(results.contains_key(&'‐')); // Hyphen
+        assert!(results.contains_key(&'­')); // Soft Hyphen
+    }
+
+    #[test]
+    fn test_search_emoji() {
+        let cache = create_test_cache();
+
+        // Search by emoji character
+        let params = SearchParams::new("😀".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results.len(), 1);
+        assert!(results.contains_key(&'😀'));
+
+        // Search by emoji name
+        let params = SearchParams::new("grinning".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert!(results.contains_key(&'😀'));
+    }
+
+    #[test]
+    fn test_search_special_characters() {
+        let cache = create_test_cache();
+
+        // Search for space
+        let params = SearchParams::new("space".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert!(results.contains_key(&' '));
+        assert!(results.contains_key(&'\u{00A0}')); // No-break Space
+    }
+
+    #[test]
+    fn test_search_with_name_disabled() {
+        let cache = create_test_cache();
+
+        // With search_name disabled, "hyphen" should not find anything
+        // (since no character is literally the string "hyphen")
+        let params = SearchParams::new("hyphen".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_search_partial_word_match() {
+        let cache = create_test_cache();
+
+        // Search for "mag" should find "Magnifying Glass"
+        let params = SearchParams::new("mag".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert!(results.contains_key(&'🔍'));
+    }
+
+    #[test]
+    fn test_combined_flags() {
+        let cache = create_test_cache();
+
+        // Case sensitive + search names for "latin" (lowercase)
+        let params = SearchParams::new("latin".to_string(), false, true, true);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results.len(), 0); // "latin" lowercase won't match "Latin" in names
+
+        // Case sensitive + search names for "Latin" (correct case)
+        let params = SearchParams::new("Latin".to_string(), false, true, true);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert_eq!(results.len(), 2); // Should find 'A' and 'a' (both have "Latin" in name)
+        assert!(results.contains_key(&'A'));
+        assert!(results.contains_key(&'a'));
+    }
+
+    #[test]
+    fn test_search_mathematical_symbols() {
+        let cache = create_test_cache();
+
+        // Search for plus sign
+        let params = SearchParams::new("+".to_string(), false, false, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert!(results.contains_key(&'+'));
+
+        // Search by name
+        let params = SearchParams::new("plus".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        assert!(results.contains_key(&'+'));
     }
 }
