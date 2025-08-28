@@ -12,6 +12,7 @@ documentation = "https://docs.rs/glyphana/"
 repository = "https://github.com/virtualritz/glyphana/"
 
 [features]
+default = []
 ## Make `egui` comptaible with screen readers. **Adds a lot of dependencies.**
 accesskit = ["eframe/accesskit"]
 # Alternative backend if default, `glow`, gives your trouble.
