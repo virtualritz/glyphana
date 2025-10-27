@@ -49,7 +49,7 @@ unicode-case-mapping = "1"
 unicode_names2 = "2.0"
 unicode-normalization = "0.1"
 unicode_skeleton = "0.1"
-stringzilla = "3"
+stringzilla = "4"
 textwrap = "0.16"
 
 # native:
