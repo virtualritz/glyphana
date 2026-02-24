@@ -1,128 +1,208 @@
 # CI that:
 #
 # * checks for a Git Tag that looks like a release
-# * creates a Github Release™ and fills in its text
-# * builds artifacts with cargo-dist (executable-zips, installers)
-# * uploads those artifacts to the Github Release™
+# * builds packages for Linux (.deb), macOS (.dmg), and Windows (.msi)
+# * creates a Github Release™ and uploads the packages
 #
-# Note that the Github Release™ will be created before the artifacts,
-# so there will be a few minutes where the release has no artifacts
-# and then they will slowly trickle in, possibly failing. To make
-# this more pleasant we mark the release as a "draft" until all
-# artifacts have been successfully uploaded. This allows you to
-# choose what to do with partial successes and avoids spamming
-# anyone with notifications before the release is actually ready.
+# This workflow will trigger on version tags like:
+# v1.0.0, v2.1.3, v0.1.0-alpha, etc.
 name: Release
 
 permissions:
   contents: write
 
-# This task will run whenever you push a git tag that looks like a version
-# like "v1", "v1.2.0", "v0.1.0-prerelease01", "my-app-v1.0.0", etc.
-# The version will be roughly parsed as ({PACKAGE_NAME}-)?v{VERSION}, where
-# PACKAGE_NAME must be the name of a Cargo package in your workspace, and VERSION
-# must be a Cargo-style SemVer Version.
-#
-# If PACKAGE_NAME is specified, then we will create a Github Release™ for that
-# package (erroring out if it doesn't have the given version or isn't cargo-dist-able).
-#
-# If PACKAGE_NAME isn't specified, then we will create a Github Release™ for all
-# (cargo-dist-able) packages in the workspace with that version (this is mode is
-# intended for workspaces with only one dist-able package, or with all dist-able
-# packages versioned/released in lockstep).
-#
-# If you push multiple tags at once, separate instances of this workflow will
-# spin up, creating an independent Github Release™ for each one.
-#
-# If there's a prerelease-style suffix to the version then the Github Release™
-# will be marked as a prerelease.
 on:
   push:
-    branches: [master]
     tags:
-      - "*-?v[0-9]+*"
+      - "v*.*.*"
+      - "v*.*.*-*"
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  # Create the Github Release™ so the packages have something to be uploaded to
-  create-release:
-    runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup update nightly --no-self-update && rustup default nightly
-      - name: Install cargo-dist
-        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.3-prerelease04/cargo-dist-v0.0.3-prerelease04-installer.sh | sh
-      - name: Create Release
-        run: |
-          cargo dist manifest --tag=${{ github.ref_name }} --artifacts=all --no-local-paths --output-format=json > dist-manifest.json
-          echo "dist manifest ran successfully"
-          cat dist-manifest.json
+  build:
+    name: Build - ${{ matrix.platform.name }}
+    runs-on: ${{ matrix.platform.os }}
 
-          # Create the Github Release™ based on what cargo-dist thinks it should be
-          ANNOUNCEMENT_TITLE=$(cat dist-manifest.json | jq --raw-output ".announcement_title")
-          IS_PRERELEASE=$(cat dist-manifest.json | jq --raw-output ".announcement_is_prerelease")
-          cat dist-manifest.json | jq --raw-output ".announcement_github_body" > new_dist_announcement.md
-          gh release create ${{ github.ref_name }} --draft --prerelease="$IS_PRERELEASE" --title="$ANNOUNCEMENT_TITLE" --notes-file=new_dist_announcement.md
-          echo "created announcement!"
-
-          # Upload the manifest to the Github Release™
-          gh release upload ${{ github.ref_name }} dist-manifest.json
-          echo "uploaded manifest!"
-
-  # Build and packages all the things
-  upload-artifacts:
-    needs: create-release
     strategy:
+      fail-fast: false
       matrix:
-        # For these target platforms
-        include:
-          - os: macos-11
-            dist-args: --artifacts=local --target=x86_64-apple-darwin
-            install-dist: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.3-prerelease04/cargo-dist-v0.0.3-prerelease04-installer.sh | sh
-          - os: ubuntu-20.04
-            dist-args: --artifacts=local --target=x86_64-unknown-linux-gnu
-            install-dist: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.0.3-prerelease04/cargo-dist-v0.0.3-prerelease04-installer.sh | sh
-          - os: windows-2019
-            dist-args: --artifacts=local --target=x86_64-pc-windows-msvc
-            install-dist: irm  https://github.com/axodotdev/cargo-dist/releases/download/v0.0.3-prerelease04/cargo-dist-v0.0.3-prerelease04-installer.ps1 | iex
+        platform:
+          - name: Linux-x86_64
+            os: ubuntu-20.04
+            target: x86_64-unknown-linux-gnu
+            formats: deb
 
-    runs-on: ${{ matrix.os }}
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          - name: macOS-x86_64
+            os: macos-11
+            target: x86_64-apple-darwin
+            formats: dmg
+
+          - name: macOS-aarch64
+            os: macos-11
+            target: aarch64-apple-darwin
+            formats: dmg
+
+          - name: Windows-x86_64
+            os: windows-2019
+            target: x86_64-pc-windows-msvc
+            formats: msi
+
     steps:
-      - uses: actions/checkout@v3
-      - name: Install Rust
-        run: rustup update nightly --no-self-update && rustup default nightly
-      - name: Install cargo-dist
-        run: ${{ matrix.install-dist }}
-      - name: Run cargo-dist
-        # This logic is a bit janky because it's trying to be a polyglot between
-        # powershell and bash since this will run on windows, macos, and linux!
-        # The two platforms don't agree on how to talk about env vars but they
-        # do agree on 'cat' and '$()' so we use that to marshal values between commands.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Setup Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.platform.target }}
+
+      - name: Install Linux dependencies
+        if: matrix.platform.os == 'ubuntu-20.04'
         run: |
-          # Actually do builds and make zips and whatnot
-          cargo dist build --tag=${{ github.ref_name }} --output-format=json ${{ matrix.dist-args }} > dist-manifest.json
-          echo "dist ran successfully"
-          cat dist-manifest.json
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.0-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libxdo-dev \
+            libayatana-appindicator3-dev
 
-          # Parse out what we just built and upload it to the Github Release™
-          cat dist-manifest.json | jq --raw-output ".releases[].artifacts[].path" > uploads.txt
-          echo "uploading..."
-          cat uploads.txt
-          gh release upload ${{ github.ref_name }} $(cat uploads.txt)
-          echo "uploaded!"
+      - name: Install cargo-packager
+        run: |
+          cargo install cargo-packager --locked
 
-  # Mark the Github Release™ as a non-draft now that everything has succeeded!
-  publish-release:
-    needs: [create-release, upload-artifacts]
+      - name: Build application
+        run: |
+          cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Prepare for packaging
+        run: |
+          # Ensure binary is in expected location for cargo-packager
+          mkdir -p target/release
+          if [ "${{ matrix.platform.os }}" = "windows-2019" ]; then
+            cp target/${{ matrix.platform.target }}/release/glyphana.exe target/release/glyphana.exe 2>/dev/null || true
+          else
+            cp target/${{ matrix.platform.target }}/release/glyphana target/release/glyphana 2>/dev/null || true
+          fi
+        shell: bash
+
+      - name: Package application
+        run: |
+          cargo packager --release --formats ${{ matrix.platform.formats }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: glyphana-${{ matrix.platform.name }}
+          path: |
+            dist/*.deb
+            dist/*.dmg
+            dist/*.msi
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
     runs-on: ubuntu-latest
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     steps:
-      - uses: actions/checkout@v3
-      - name: mark release as non-draft
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release files
         run: |
-          gh release edit ${{ github.ref_name }} --draft=false
+          mkdir -p release
+
+          # Move all packages to release directory with platform names
+          for dir in artifacts/glyphana-*; do
+            platform=$(basename "$dir" | sed 's/glyphana-//')
+            for file in "$dir"/*; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                extension="${filename##*.}"
+                base="${filename%.*}"
+                newname="${base}-${platform}.${extension}"
+                cp "$file" "release/$newname"
+              fi
+            done
+          done
+
+          # Create checksums
+          cd release
+          sha256sum * > checksums.sha256
+          cd ..
+
+          # Display final files
+          echo "Release files:"
+          ls -la release/
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          cat > release_notes.md << EOF
+          # Glyphana ${VERSION}
+
+          Unicode Glyph Explorer - Browse, search, and collect Unicode characters.
+
+          ## Installation
+
+          ### Linux
+          Download the \`.deb\` package and install with:
+          \`\`\`bash
+          sudo dpkg -i glyphana_*.deb
+          \`\`\`
+
+          ### macOS
+          Download the \`.dmg\` file, open it, and drag Glyphana to your Applications folder.
+
+          ### Windows
+          Download the \`.msi\` installer and run it.
+
+          ## Features
+          - Browse Unicode blocks and categories
+          - Search glyphs by name or character
+          - Drag-and-drop category organization
+          - Recently used glyph tracking
+          - Glyph collection management
+          - Multi-font support (Noto fonts)
+          - Fuzzy string matching with edit distance
+          - System tray support
+
+          ## Checksums
+          SHA256 checksums are available in \`checksums.sha256\`
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Glyphana ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          files: |
+            release/*.deb
+            release/*.dmg
+            release/*.msi
+            release/checksums.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

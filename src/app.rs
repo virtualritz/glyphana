@@ -13,10 +13,10 @@ fn to_lowercase_string(s: &str) -> String {
             let mapped = unicode_case_mapping::to_lowercase(c);
             let mut result = String::new();
             for &code in &mapped {
-                if code != 0 {
-                    if let Some(ch) = char::from_u32(code) {
-                        result.push(ch);
-                    }
+                if code != 0
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    result.push(ch);
                 }
             }
             if result.is_empty() {
@@ -34,10 +34,10 @@ fn to_uppercase_string(s: &str) -> String {
             let mapped = unicode_case_mapping::to_uppercase(c);
             let mut result = String::new();
             for &code in &mapped {
-                if code != 0 {
-                    if let Some(ch) = char::from_u32(code) {
-                        result.push(ch);
-                    }
+                if code != 0
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    result.push(ch);
                 }
             }
             if result.is_empty() {
@@ -60,6 +60,7 @@ flate!(static NOTO_EMOJI_DATA: [u8] from "assets/NotoEmoji-Regular.ttf");
 use crate::categories::{
     Category, CharacterInspector, UnicodeCategory, UnicodeCollection, create_default_categories,
 };
+use crate::font_manager::{FontManager, NotoFontMapping};
 use crate::glyph::{GlyphScale, available_characters, char_name};
 use crate::search::{SearchEngine, SearchParams};
 use crate::ui::{
@@ -68,11 +69,11 @@ use crate::ui::{
 };
 
 // Inspector view mode - either related characters or font variations
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum InspectorViewMode {
-    RelatedCharacters,
-    FontVariations,
-}
+// #[derive(Debug, Clone, Copy, PartialEq)]
+// enum InspectorViewMode {
+//     RelatedCharacters,
+//     FontVariations,
+// }
 
 // We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(Deserialize, Serialize)]
@@ -113,8 +114,42 @@ pub struct GlyphanaApp {
     glyph_scale: GlyphScale,
 
     // Inspector view mode - either related characters or font variations
+    // #[serde(skip)]
+    // inspector_view_mode: InspectorViewMode,
+
+    // Keep the app in tray when closed (persisted)
+    keep_in_tray: bool,
+
+    // Track if we should restore window
     #[serde(skip)]
-    inspector_view_mode: InspectorViewMode,
+    should_restore_window: bool,
+
+    // Track if we're running on Wayland
+    #[serde(skip)]
+    is_wayland: bool,
+
+    // File dialog for export
+    #[serde(skip)]
+    file_dialog: egui_file_dialog::FileDialog,
+
+    // Settings dialog state
+    #[serde(skip)]
+    show_settings_dialog: bool,
+
+    // Font manager
+    #[serde(skip)]
+    font_manager: Option<FontManager>,
+
+    // Settings tab
+    #[serde(skip)]
+    settings_tab: SettingsTab,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+enum SettingsTab {
+    #[default]
+    Categories,
+    Fonts,
 }
 
 impl Default for GlyphanaApp {
@@ -140,7 +175,14 @@ impl Default for GlyphanaApp {
             search_active: false,
             pixels_per_point: Default::default(),
             glyph_scale: GlyphScale::Normal,
-            inspector_view_mode: InspectorViewMode::RelatedCharacters,
+            // inspector_view_mode: InspectorViewMode::RelatedCharacters,
+            keep_in_tray: false,
+            should_restore_window: false,
+            is_wayland: false,
+            file_dialog: egui_file_dialog::FileDialog::new(),
+            show_settings_dialog: false,
+            font_manager: FontManager::new().ok(),
+            settings_tab: SettingsTab::default(),
         }
     }
 }
@@ -154,16 +196,51 @@ impl GlyphanaApp {
         // Add the Noto fonts -- what we use to cover as much unicode as possible for now.
         cc.egui_ctx.set_fonts(Self::fonts());
 
+        // Detect if we're running on Wayland
+        let is_wayland = std::env::var("WAYLAND_DISPLAY").is_ok();
+        eprintln!("Running on Wayland: {}", is_wayland);
+
         // Load previous app state (if any).
         if let Some(storage) = cc.storage {
             let mut app: Self = eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+            eprintln!("Loaded app state, keep_in_tray: {}", app.keep_in_tray);
             // Re-initialize categories after deserialization
             for category in &mut app.categories {
                 category.unicode_category = Self::unicode_category_for_name(&category.name);
             }
+            // Re-initialize file dialog since it's skipped in serialization
+            app.file_dialog = egui_file_dialog::FileDialog::new();
+            app.should_restore_window = false;
+            app.is_wayland = is_wayland;
+            app.show_settings_dialog = false;
+            app.font_manager = FontManager::new().ok();
+            app.settings_tab = SettingsTab::default();
+
+            // Re-initialize required fonts for categories after deserialization
+            for category in &mut app.categories {
+                category.required_font = Category::get_required_font(&category.name);
+            }
+
+            // Initialize fonts for visible categories
+            app.initialize_required_fonts(&cc.egui_ctx);
+
+            // Re-run search if there was an active search query
+            if !app.ui_search_text.is_empty() {
+                app.search_active = true;
+                app.update_search_text_and_cache();
+            }
+
             app
         } else {
-            Default::default()
+            let app = Self {
+                is_wayland,
+                ..Self::default()
+            };
+
+            // Initialize fonts for visible categories
+            app.initialize_required_fonts(&cc.egui_ctx);
+
+            app
         }
     }
 
@@ -379,11 +456,110 @@ impl GlyphanaApp {
 impl eframe::App for GlyphanaApp {
     /// Called by the frame work to save state before shutdown.
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eprintln!("Saving app state, keep_in_tray: {}", self.keep_in_tray);
         eframe::set_value(storage, eframe::APP_KEY, self);
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // If we should restore the window, keep trying
+        if self.should_restore_window {
+            // Unminimize and focus
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            // Keep requesting repaints until the window is actually restored
+            ctx.request_repaint();
+            // Reset flag after a few frames to avoid infinite loop
+            self.should_restore_window = false;
+        }
+
+        // Handle window close request (X button)
+        if ctx.input(|i| i.viewport().close_requested()) {
+            eprintln!("Close requested, keep_in_tray: {}", self.keep_in_tray);
+            if self.keep_in_tray {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+
+                if self.is_wayland {
+                    // On Wayland, we can't properly hide/minimize to tray
+                    // The window stays visible but the close is cancelled
+                    eprintln!("Wayland: Window stays visible (minimize to tray not supported)");
+                } else {
+                    // On X11/Windows/macOS, minimize the window to tray
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    // Keep requesting repaints so we can respond to tray events
+                    ctx.request_repaint_after(std::time::Duration::from_millis(100));
+                }
+            }
+            // If keep_in_tray is false, let the close proceed normally
+        }
+
+        // Handle tray icon events
+        use tray_icon::{TrayIconEvent, menu::MenuEvent};
+
+        // Check for tray icon clicks
+        if let Ok(TrayIconEvent::Click { .. }) = TrayIconEvent::receiver().try_recv() {
+            eprintln!("Tray icon clicked");
+            if self.is_wayland {
+                // On Wayland, just focus the window
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+            } else {
+                // On X11/Windows/macOS, restore from minimized state
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                self.should_restore_window = true;
+            }
+            ctx.request_repaint();
+        }
+
+        // Check for menu events
+        if let Ok(event) = MenuEvent::receiver().try_recv() {
+            match event.id.as_ref() {
+                "show" => {
+                    eprintln!("Show Glyphana clicked");
+                    if self.is_wayland {
+                        // On Wayland, just focus the window (can't restore from minimized)
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    } else {
+                        // On X11/Windows/macOS, restore from minimized state
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    }
+                    ctx.request_repaint();
+                }
+                "quit" => {
+                    // Quit application - force exit
+                    std::process::exit(0);
+                }
+                _ => {}
+            }
+        }
+
+        // Keep requesting repaints when minimized to handle tray events (not on Wayland)
+        if !self.is_wayland
+            && ctx.input(|i| i.viewport().minimized.unwrap_or(false))
+            && self.keep_in_tray
+        {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
+
+        // Update file dialog
+        self.file_dialog.update(ctx);
+
+        // Check if the user picked a file for export
+        if let Some(path) = self.file_dialog.take_picked() {
+            // Add .txt extension if not present
+            let mut path = path.to_path_buf();
+            if path.extension().is_none() {
+                path.set_extension("txt");
+            }
+            self.export_collection(path);
+        }
+
+        // Update settings dialog
+        self.show_settings_dialog(ctx);
+
         // Check for screen DPI changes
         let current_ppp = ctx.pixels_per_point();
         if self.pixels_per_point != current_ppp && current_ppp > 0.0 {
@@ -443,12 +619,27 @@ impl GlyphanaApp {
 
                     ui.separator();
 
-                    ui.add_enabled_ui(false, |ui| ui.button("Export Collection…"));
+                    if ui.button("Export Collection…").clicked() {
+                        // Open the file dialog to save a file
+                        self.file_dialog.save_file();
+                    }
+
+                    ui.separator();
+
+                    if ui.button("Settings…").clicked() {
+                        self.show_settings_dialog = true;
+                        ui.close_menu();
+                    }
+
+                    ui.separator();
+
+                    ui.checkbox(&mut self.keep_in_tray, "Keep in Tray");
 
                     ui.separator();
 
                     if ui.button("Quit").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        // Always close the app when Quit is clicked - force exit
+                        std::process::exit(0);
                     }
                 });
 
@@ -485,18 +676,30 @@ impl GlyphanaApp {
                     }
 
                     // Case sensitive toggle
-                    ui.toggle_value(&mut self.case_sensitive, LOWER_UPPER_CASE.to_string())
-                        .on_hover_text("Case Sensitive");
+                    if ui.toggle_value(&mut self.case_sensitive, LOWER_UPPER_CASE.to_string())
+                        .on_hover_text("Case Sensitive")
+                        .changed()
+                    {
+                        self.update_search_text_and_cache();
+                    }
 
                     // Search names toggle
                     ui.add_enabled_ui(!self.case_sensitive, |ui| {
-                        ui.toggle_value(&mut self.search_name, NAME_BADGE.to_string())
-                            .on_hover_text("Search Glyph Names");
+                        if ui.toggle_value(&mut self.search_name, NAME_BADGE.to_string())
+                            .on_hover_text("Search Glyph Names")
+                            .changed()
+                        {
+                            self.update_search_text_and_cache();
+                        }
                     });
 
                     // Search only in categories toggle
-                    ui.toggle_value(&mut self.search_only_categories, SUBSET.to_string())
-                        .on_hover_text("Search Only Selected Category");
+                    if ui.toggle_value(&mut self.search_only_categories, SUBSET.to_string())
+                        .on_hover_text("Search Only Selected Category")
+                        .changed()
+                    {
+                        self.update_search_text_and_cache();
+                    }
                 });
             });
         });
@@ -510,17 +713,52 @@ impl GlyphanaApp {
             let selected_category = self.selected_category;
             let mut category_clicked = None;
 
-            let response = dnd(ui, "category_dnd").show_vec(
-                &mut self.categories,
-                |ui, category, handle, _state| {
+            // Filter to only show visible categories
+            let mut visible_categories: Vec<&mut Category> = self
+                .categories
+                .iter_mut()
+                .filter(|cat| cat.visible)
+                .collect();
+
+            let response = dnd(ui, "category_dnd").show(
+                visible_categories.iter_mut(),
+                |ui, category, handle, _| {
                     ui.horizontal(|ui| {
                         handle.ui(ui, |ui| {
                             ui.label("≡");
                         });
 
                         let is_selected = selected_category == category.id();
-                        if ui.selectable_label(is_selected, &category.name).clicked() {
+
+                        // Check if this category needs a font that's being downloaded
+                        let is_downloading = category
+                            .required_font
+                            .as_ref()
+                            .and_then(|font_name| {
+                                self.font_manager
+                                    .as_ref()
+                                    .and_then(|fm| fm.download_progress(font_name))
+                            })
+                            .is_some();
+
+                        // Create label with download indicator
+                        let label_text = if is_downloading {
+                            format!("{} ⏳", category.name)
+                        } else {
+                            category.name.clone()
+                        };
+
+                        let response = ui.selectable_label(is_selected, label_text);
+
+                        if response.clicked() {
                             category_clicked = Some(category.id());
+                        }
+
+                        // Show download indicator if font is being downloaded
+                        if is_downloading {
+                            response.on_hover_text("Downloading font...");
+                            // Request continuous repaints while downloading
+                            ui.ctx().request_repaint();
                         }
                     });
                 },
@@ -534,6 +772,52 @@ impl GlyphanaApp {
                     self.selected_category = cat_id;
                     // Deactivate search when selecting a category
                     self.search_active = false;
+
+                    // Check if this category needs a font to be downloaded
+                    if let Some(category) = self.categories.iter().find(|c| c.id() == cat_id)
+                        && let Some(ref font_name) = category.required_font
+                        && let Some(ref font_manager) = self.font_manager
+                        && !font_manager.is_cached(font_name)
+                        && let Some((_, font_url)) =
+                            NotoFontMapping::font_for_script(&category.name)
+                    {
+                        // Clone what we need for the background task
+                        let font_name_clone = font_name.clone();
+                        let font_url_clone = font_url.to_string();
+                        let font_manager_clone = font_manager.clone();
+                        let ctx_clone = ctx.clone();
+
+                        // Download font in background thread
+                        std::thread::spawn(move || {
+                            match font_manager_clone.load_font(&font_name_clone, &font_url_clone) {
+                                Ok(font_data) => {
+                                    // Read existing font definitions and add the new font
+                                    let mut font_definitions =
+                                        ctx_clone.fonts(|f| f.definitions().clone());
+
+                                    font_definitions.font_data.insert(
+                                        font_name_clone.clone(),
+                                        egui::FontData::from_owned(font_data).into(),
+                                    );
+
+                                    // Add to proportional family
+                                    font_definitions
+                                        .families
+                                        .entry(egui::FontFamily::Proportional)
+                                        .or_default()
+                                        .push(font_name_clone.clone());
+
+                                    ctx_clone.set_fonts(font_definitions);
+                                    ctx_clone.request_repaint();
+
+                                    eprintln!("Successfully loaded font: {}", font_name_clone);
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to download font {}: {}", font_name_clone, e);
+                                }
+                            }
+                        });
+                    }
                 }
                 self.update_search_text_and_cache();
             }
@@ -634,43 +918,95 @@ impl GlyphanaApp {
             let end = block.end().min(code_point + 4);
 
             for cp in start..=end {
-                if cp != code_point {
-                    if let Some(nearby_char) = char::from_u32(cp) {
-                        if !related.contains(&nearby_char) {
-                            related.push(nearby_char);
-                        }
-                    }
+                if cp != code_point
+                    && let Some(nearby_char) = char::from_u32(cp)
+                    && !related.contains(&nearby_char)
+                {
+                    related.push(nearby_char);
                 }
             }
         }
 
-        // Add diacritic variations for Latin characters
-        if ch.is_ascii_alphabetic() {
-            let base_char = to_lowercase_string(&ch.to_string())
-                .chars()
-                .next()
-                .unwrap_or(ch);
-            let diacritic_variations: Vec<(char, Vec<char>)> = vec![
-                ('a', vec!['à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą']),
-                ('e', vec!['è', 'é', 'ê', 'ë', 'ē', 'ė', 'ę', 'ě']),
-                ('i', vec!['ì', 'í', 'î', 'ï', 'ī', 'į', 'ı']),
-                ('o', vec!['ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ō', 'ő']),
-                ('u', vec!['ù', 'ú', 'û', 'ü', 'ū', 'ů', 'ű', 'ų']),
-                ('c', vec!['ç', 'ć', 'č']),
-                ('n', vec!['ñ', 'ń', 'ň']),
-                ('s', vec!['ś', 'š', 'ş']),
-                ('z', vec!['ź', 'ž', 'ż']),
-            ];
+        // Add diacritic variations and ligatures for Latin characters
+        // Get the base character by removing accents
+        let base_char_str = self.normalize_char_for_matching(ch);
+        let base_char = base_char_str
+            .chars()
+            .next()
+            .unwrap_or(ch)
+            .to_ascii_lowercase();
 
-            for (base, variations) in diacritic_variations {
-                if base_char == base {
-                    for var in variations {
-                        if !related.contains(&var) {
-                            related.push(var);
-                        }
+        // AIDEV-NOTE: Expanded mapping to include:
+        // - Both uppercase and lowercase variations
+        // - Ligatures (Æ/æ for A, Œ/œ for O, etc.)
+        // - Nordic letters (Ø/ø for O)
+        // - More complete diacritic coverage
+        // This ensures users see all semantically related characters
+        let diacritic_variations: Vec<(char, Vec<char>)> = vec![
+            (
+                'a',
+                vec![
+                    'à', 'á', 'â', 'ã', 'ä', 'å', 'ā', 'ă', 'ą', 'ǎ', 'ȁ', 'ȃ', 'À', 'Á', 'Â', 'Ã',
+                    'Ä', 'Å', 'Ā', 'Ă', 'Ą', 'Ǎ', 'Ȁ', 'Ȃ', 'Æ', 'æ', 'Ǽ', 'ǽ', 'Ǣ',
+                    'ǣ', // A-E ligatures
+                ],
+            ),
+            (
+                'e',
+                vec![
+                    'è', 'é', 'ê', 'ë', 'ē', 'ė', 'ę', 'ě', 'ȅ', 'ȇ', 'ẽ', 'È', 'É', 'Ê', 'Ë', 'Ē',
+                    'Ė', 'Ę', 'Ě', 'Ȅ', 'Ȇ', 'Ẽ',
+                ],
+            ),
+            (
+                'i',
+                vec![
+                    'ì', 'í', 'î', 'ï', 'ī', 'į', 'ı', 'ǐ', 'ĩ', 'Ì', 'Í', 'Î', 'Ï', 'Ī', 'Į', 'İ',
+                    'Ǐ', 'Ĩ', 'Ĳ', 'ĳ', // I-J ligature
+                ],
+            ),
+            (
+                'o',
+                vec![
+                    'ò', 'ó', 'ô', 'õ', 'ö', 'ø', 'ō', 'ő', 'ǒ', 'ȍ', 'ȏ', 'ơ', 'Ò', 'Ó', 'Ô', 'Õ',
+                    'Ö', 'Ø', 'Ō', 'Ő', 'Ǒ', 'Ȍ', 'Ȏ', 'Ơ', 'Œ', 'œ', 'Ǿ',
+                    'ǿ', // O-E ligatures and O with stroke and acute
+                ],
+            ),
+            (
+                'u',
+                vec![
+                    'ù', 'ú', 'û', 'ü', 'ū', 'ů', 'ű', 'ų', 'ǔ', 'ũ', 'ȕ', 'ȗ', 'Ù', 'Ú', 'Û', 'Ü',
+                    'Ū', 'Ů', 'Ű', 'Ų', 'Ǔ', 'Ũ', 'Ȕ', 'Ȗ',
+                ],
+            ),
+            ('c', vec!['ç', 'ć', 'č', 'ĉ', 'Ç', 'Ć', 'Č', 'Ĉ']),
+            ('n', vec!['ñ', 'ń', 'ň', 'ņ', 'Ñ', 'Ń', 'Ň', 'Ņ']),
+            (
+                's',
+                vec!['ś', 'š', 'ş', 'ŝ', 'ș', 'Ś', 'Š', 'Ş', 'Ŝ', 'Ș', 'ß'],
+            ),
+            ('z', vec!['ź', 'ž', 'ż', 'Ź', 'Ž', 'Ż']),
+            ('d', vec!['ď', 'đ', 'Ď', 'Đ', 'Ð', 'ð']),
+            ('g', vec!['ğ', 'ģ', 'ĝ', 'ġ', 'Ğ', 'Ģ', 'Ĝ', 'Ġ']),
+            ('h', vec!['ĥ', 'ħ', 'Ĥ', 'Ħ']),
+            ('j', vec!['ĵ', 'Ĵ']),
+            ('k', vec!['ķ', 'ĸ', 'Ķ']),
+            ('l', vec!['ł', 'ľ', 'ļ', 'ŀ', 'Ł', 'Ľ', 'Ļ', 'Ŀ']),
+            ('r', vec!['ř', 'ŕ', 'ŗ', 'Ř', 'Ŕ', 'Ŗ']),
+            ('t', vec!['ť', 'ţ', 'ŧ', 'ț', 'Ť', 'Ţ', 'Ŧ', 'Ț', 'Þ', 'þ']),
+            ('w', vec!['ŵ', 'ẅ', 'ẃ', 'Ŵ', 'Ẅ', 'Ẃ']),
+            ('y', vec!['ý', 'ÿ', 'ŷ', 'ȳ', 'Ý', 'Ÿ', 'Ŷ', 'Ȳ']),
+        ];
+
+        for (base, variations) in diacritic_variations {
+            if base_char == base {
+                for var in variations {
+                    if var != ch && !related.contains(&var) {
+                        related.push(var);
                     }
-                    break;
                 }
+                break;
             }
         }
 
@@ -678,8 +1014,12 @@ impl GlyphanaApp {
         let char_code = ch as i64;
         related.sort_by_key(|&c| (c as i64 - char_code).abs());
 
-        // Limit to first 24 related characters (increased from 12)
-        related.truncate(24);
+        // Remove duplicates while preserving order
+        let mut seen = std::collections::HashSet::new();
+        related.retain(|&c| seen.insert(c));
+
+        // Limit to first 48 related characters to show more variations
+        related.truncate(48);
         related
     }
 
@@ -720,6 +1060,43 @@ impl GlyphanaApp {
     }
 
     // Get available fonts that have the character
+    fn export_collection(&self, path: std::path::PathBuf) {
+        use std::fs::File;
+        use std::io::Write;
+
+        // Prepare the content
+        let mut content = String::new();
+        content.push_str("Glyphana Character Collection\n");
+        content.push_str("=============================\n\n");
+
+        // Sort characters for consistent output
+        let mut sorted_chars: Vec<char> = self.collection.iter().copied().collect();
+        sorted_chars.sort();
+
+        for ch in sorted_chars {
+            let name = char_name(ch);
+            let code = format!("U+{:04X}", ch as u32);
+            let decimal = ch as u32;
+            let html = format!("&#{};", decimal);
+
+            content.push_str(&format!(
+                "{} - {} - {} ({}) - HTML: {}\n",
+                ch, name, code, decimal, html
+            ));
+        }
+
+        content.push_str(&format!("\nTotal: {} characters\n", self.collection.len()));
+
+        // Write to file
+        if let Ok(mut file) = File::create(&path)
+            && let Err(e) = file.write_all(content.as_bytes())
+        {
+            eprintln!("Failed to write file: {}", e);
+        }
+    }
+
+    // Font variations feature commented out for now
+    /*
     fn font_variations(
         &self,
         ch: char,
@@ -763,6 +1140,7 @@ impl GlyphanaApp {
             })
             .collect()
     }
+    */
 
     fn render_right_panel(&mut self, ctx: &egui::Context) {
         egui::SidePanel::right("character_preview").show(ctx, |ui| {
@@ -850,43 +1228,8 @@ impl GlyphanaApp {
 
                         ui.separator();
 
-                        // Toggle between Related Characters and Font Variations
-                        ui.horizontal(|ui| {
-                            if ui
-                                .selectable_label(
-                                    self.inspector_view_mode
-                                        == InspectorViewMode::RelatedCharacters,
-                                    "Related",
-                                )
-                                .clicked()
-                            {
-                                self.inspector_view_mode = InspectorViewMode::RelatedCharacters;
-                            }
-
-                            ui.separator();
-
-                            if ui
-                                .selectable_label(
-                                    self.inspector_view_mode == InspectorViewMode::FontVariations,
-                                    "Font Variations",
-                                )
-                                .clicked()
-                            {
-                                self.inspector_view_mode = InspectorViewMode::FontVariations;
-                            }
-                        });
-
-                        ui.separator();
-
-                        // Show the selected view
-                        match self.inspector_view_mode {
-                            InspectorViewMode::RelatedCharacters => {
-                                self.render_related_characters(ui);
-                            }
-                            InspectorViewMode::FontVariations => {
-                                self.render_font_variations(ui);
-                            }
-                        }
+                        // Just show related characters without the header
+                        self.render_related_characters(ui);
                     } else {
                         ui.label("Select a character to see details");
                     }
@@ -982,6 +1325,8 @@ impl GlyphanaApp {
         }
     }
 
+    // Font variations feature commented out for now
+    /*
     fn render_font_variations(&mut self, ui: &mut egui::Ui) {
         let fonts = self.font_variations(self.selected_char, ui.ctx());
 
@@ -1052,158 +1397,13 @@ impl GlyphanaApp {
                 });
         }
     }
+    */
 
     fn render_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             // Always show the glyph grid
             self.render_glyph_grid(ui);
         });
-    }
-
-    #[allow(dead_code)]
-    fn _render_single_glyph_view(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            if ui.button("← Back").clicked() {
-                self.selected_char = '\0';
-            }
-
-            ui.separator();
-
-            if ui.button("Copy Character").clicked() {
-                ui.ctx().copy_text(self.selected_char.to_string());
-            }
-
-            if ui.button("Copy Unicode").clicked() {
-                ui.ctx()
-                    .copy_text(format!("U+{:04X}", self.selected_char as u32));
-            }
-
-            if !self.collection.contains(&self.selected_char) {
-                if ui.button("Add to Collection").clicked() {
-                    self.collection.insert(self.selected_char);
-                }
-            } else if ui.button("Remove from Collection").clicked() {
-                self.collection.remove(&self.selected_char);
-            }
-        });
-
-        ui.separator();
-
-        // Large character preview with ascender/descender lines
-        let rect = ui.available_rect_before_wrap();
-        let scale = rect.width().min(rect.height() * 0.5);
-        let (response, painter) =
-            ui.allocate_painter(egui::Vec2::new(scale, scale * 1.2), egui::Sense::click());
-
-        self.paint_glyph(scale * 0.8, ui, response, painter);
-
-        ui.separator();
-
-        // Display character info
-        ui.heading(format!("Character: {}", self.selected_char));
-        ui.label(format!("Name: {}", char_name(self.selected_char)));
-        ui.label(format!(
-            "Code: U+{:04X} ({})",
-            self.selected_char as u32, self.selected_char as u32
-        ));
-
-        ui.separator();
-
-        // Font preview with proper ascender/descender lines
-        self._render_font_preview(ui);
-    }
-
-    #[allow(dead_code)]
-    fn _render_font_preview(&self, ui: &mut egui::Ui) {
-        use rusttype::{Font, Scale};
-
-        // Try to load a font for metrics
-        let font_data = include_bytes!("../assets/NotoSans-Regular.otf");
-        if let Some(font) = Font::try_from_bytes(font_data) {
-            let scale = Scale::uniform(100.0);
-            let v_metrics = font.v_metrics(scale);
-
-            let baseline = 100.0;
-            let ascent_line = baseline - v_metrics.ascent;
-            let descent_line = baseline - v_metrics.descent;
-
-            ui.group(|ui| {
-                let (response, painter) =
-                    ui.allocate_painter(egui::Vec2::new(200.0, 150.0), egui::Sense::hover());
-
-                let rect = response.rect;
-
-                // Draw guidelines with labels
-                let line_color = egui::Color32::from_rgb(100, 100, 100);
-                let label_color = egui::Color32::from_rgb(150, 150, 150);
-
-                // Ascender line
-                painter.line_segment(
-                    [
-                        rect.left_top() + egui::vec2(0.0, ascent_line),
-                        rect.right_top() + egui::vec2(0.0, ascent_line),
-                    ],
-                    egui::Stroke::new(1.0, line_color),
-                );
-                painter.text(
-                    rect.left_top() + egui::vec2(5.0, ascent_line - 15.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    "ascender",
-                    egui::FontId::default(),
-                    label_color,
-                );
-
-                // Baseline
-                painter.line_segment(
-                    [
-                        rect.left_top() + egui::vec2(0.0, baseline),
-                        rect.right_top() + egui::vec2(0.0, baseline),
-                    ],
-                    egui::Stroke::new(2.0, line_color),
-                );
-                painter.text(
-                    rect.left_top() + egui::vec2(5.0, baseline - 5.0),
-                    egui::Align2::LEFT_BOTTOM,
-                    "baseline",
-                    egui::FontId::default(),
-                    label_color,
-                );
-
-                // Descender line
-                painter.line_segment(
-                    [
-                        rect.left_top() + egui::vec2(0.0, descent_line),
-                        rect.right_top() + egui::vec2(0.0, descent_line),
-                    ],
-                    egui::Stroke::new(1.0, line_color),
-                );
-                painter.text(
-                    rect.left_top() + egui::vec2(5.0, descent_line + 15.0),
-                    egui::Align2::LEFT_TOP,
-                    "descender",
-                    egui::FontId::default(),
-                    label_color,
-                );
-
-                // Draw the character - use appropriate font for emoji
-                let font_family = if self.selected_char as u32 >= 0x1F300
-                    || (self.selected_char as u32 >= 0x2600 && self.selected_char as u32 <= 0x27BF)
-                {
-                    // Emoji ranges
-                    egui::FontFamily::Name(NOTO_EMOJI.into())
-                } else {
-                    egui::FontFamily::Name(NOTO_SANS.into())
-                };
-
-                painter.text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    self.selected_char.to_string(),
-                    egui::FontId::new(72.0, font_family),
-                    egui::Color32::WHITE,
-                );
-            });
-        }
     }
 
     fn render_glyph_grid(&mut self, ui: &mut egui::Ui) {
@@ -1220,10 +1420,6 @@ impl GlyphanaApp {
         let scale_factor: f32 = self.glyph_scale.into();
         let base_size = 48.0 * scale_factor;
         let spacing = 4.0;
-
-        let available_width = ui.available_width();
-        let columns = ((available_width - spacing) / (base_size + spacing)).floor() as usize;
-        let _columns = columns.max(1);
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
@@ -1327,6 +1523,181 @@ impl GlyphanaApp {
             }
         }
     }
+
+    fn show_settings_dialog(&mut self, ctx: &egui::Context) {
+        if !self.show_settings_dialog {
+            return;
+        }
+
+        let mut open = self.show_settings_dialog;
+
+        egui::Window::new("Settings")
+            .open(&mut open)
+            .resizable(true)
+            .default_size([600.0, 400.0])
+            .show(ctx, |ui| {
+                // Tab selector
+                ui.horizontal(|ui| {
+                    ui.selectable_value(
+                        &mut self.settings_tab,
+                        SettingsTab::Categories,
+                        "Categories",
+                    );
+                    ui.selectable_value(&mut self.settings_tab, SettingsTab::Fonts, "Fonts");
+                });
+
+                ui.separator();
+
+                match self.settings_tab {
+                    SettingsTab::Categories => self.show_categories_settings(ui),
+                    SettingsTab::Fonts => self.show_fonts_settings(ui),
+                }
+            });
+
+        self.show_settings_dialog = open;
+    }
+
+    fn show_categories_settings(&mut self, ui: &mut egui::Ui) {
+        ui.label("Select which Unicode categories to display:");
+        ui.separator();
+
+        egui::ScrollArea::vertical()
+            .max_height(300.0)
+            .show(ui, |ui| {
+                for category in &mut self.categories {
+                    let mut visible = category.visible;
+
+                    ui.horizontal(|ui| {
+                        // Show checkbox for visibility
+                        if ui.checkbox(&mut visible, &category.name).changed() {
+                            category.visible = visible;
+                        }
+
+                        // Show font requirement if any
+                        if let Some(ref font) = category.required_font {
+                            ui.label(format!("(requires {})", font));
+                        }
+                    });
+                }
+            });
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            if ui.button("Show All").clicked() {
+                for category in &mut self.categories {
+                    category.visible = true;
+                }
+            }
+            if ui.button("Hide All").clicked() {
+                for category in &mut self.categories {
+                    category.visible = false;
+                }
+            }
+        });
+    }
+
+    fn show_fonts_settings(&mut self, ui: &mut egui::Ui) {
+        if let Some(ref font_manager) = self.font_manager {
+            ui.label("Fonts are downloaded automatically when needed.");
+            ui.separator();
+
+            // Show cache info
+            if let Ok(cache_size) = font_manager.cache_size() {
+                let size_mb = cache_size as f64 / 1_048_576.0;
+                ui.label(format!("Cache size: {:.2} MB", size_mb));
+            }
+
+            if let Ok(cached_fonts) = font_manager.list_cached_fonts()
+                && !cached_fonts.is_empty()
+            {
+                ui.separator();
+                ui.label(format!("Cached fonts: {}", cached_fonts.len()));
+
+                egui::ScrollArea::vertical()
+                    .max_height(250.0)
+                    .show(ui, |ui| {
+                        for font_name in cached_fonts {
+                            ui.horizontal(|ui| {
+                                ui.label(&font_name);
+                                if ui
+                                    .small_button("×")
+                                    .on_hover_text("Delete cached font")
+                                    .clicked()
+                                {
+                                    font_manager.clear_font_cache(&font_name).ok();
+                                }
+                            });
+                        }
+                    });
+            }
+
+            ui.separator();
+
+            if ui.button("Clear All Cache").clicked() {
+                font_manager.clear_all_cache().ok();
+            }
+
+            ui.label("Fonts are cached in your system's cache directory and will be reused across sessions.");
+        } else {
+            ui.label("Font manager not available");
+        }
+    }
+
+    /// Download fonts for initially visible categories
+    fn initialize_required_fonts(&self, ctx: &egui::Context) {
+        if let Some(ref font_manager) = self.font_manager {
+            // Check all visible categories for required fonts
+            for category in &self.categories {
+                if category.visible
+                    && let Some(ref font_name) = category.required_font
+                    && !font_manager.is_cached(font_name)
+                {
+                    // Download the font in background
+                    if let Some((_, font_url)) = NotoFontMapping::font_for_script(&category.name) {
+                        let font_name_clone = font_name.clone();
+                        let font_url_clone = font_url.to_string();
+                        let font_manager_clone = font_manager.clone();
+                        let ctx_clone = ctx.clone();
+
+                        std::thread::spawn(move || {
+                            eprintln!(
+                                "Downloading font for initially visible category: {}",
+                                font_name_clone
+                            );
+                            match font_manager_clone.load_font(&font_name_clone, &font_url_clone) {
+                                Ok(font_data) => {
+                                    // Read existing font definitions and add the new font
+                                    let mut font_definitions =
+                                        ctx_clone.fonts(|f| f.definitions().clone());
+
+                                    font_definitions.font_data.insert(
+                                        font_name_clone.clone(),
+                                        egui::FontData::from_owned(font_data).into(),
+                                    );
+
+                                    // Add to proportional family
+                                    font_definitions
+                                        .families
+                                        .entry(egui::FontFamily::Proportional)
+                                        .or_default()
+                                        .push(font_name_clone.clone());
+
+                                    ctx_clone.set_fonts(font_definitions);
+                                    ctx_clone.request_repaint();
+
+                                    eprintln!("Successfully loaded font: {}", font_name_clone);
+                                }
+                                Err(e) => {
+                                    eprintln!("Failed to download font {}: {}", font_name_clone, e);
+                                }
+                            }
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Helper methods
@@ -1377,6 +1748,7 @@ impl GlyphanaApp {
             &self.categories,
             self.selected_category,
         );
+
     }
 
     fn add_to_recently_used(&mut self, chr: char) {

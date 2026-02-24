@@ -9,10 +9,10 @@ fn to_lowercase_string(s: &str) -> String {
             let mapped = unicode_case_mapping::to_lowercase(c);
             let mut result = String::new();
             for &code in &mapped {
-                if code != 0 {
-                    if let Some(ch) = char::from_u32(code) {
-                        result.push(ch);
-                    }
+                if code != 0
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    result.push(ch);
                 }
             }
             if result.is_empty() {
@@ -30,10 +30,10 @@ fn to_uppercase_string(s: &str) -> String {
             let mapped = unicode_case_mapping::to_uppercase(c);
             let mut result = String::new();
             for &code in &mapped {
-                if code != 0 {
-                    if let Some(ch) = char::from_u32(code) {
-                        result.push(ch);
-                    }
+                if code != 0
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    result.push(ch);
                 }
             }
             if result.is_empty() {
@@ -169,13 +169,12 @@ pub fn available_characters(
     ctx: &egui::Context,
     family: egui::FontFamily,
 ) -> BTreeMap<char, String> {
-    ctx.fonts(|f| {
-        f.lock()
-            .fonts
-            .font(&egui::FontId::new(10.0, family)) // size is arbitrary for getting the characters
+    ctx.fonts_mut(|f| {
+        f.fonts
+            .font(&family)
             .characters()
             .iter()
-            .filter(|(chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
+            .filter(|&(&chr, _)| !chr.is_whitespace() && !chr.is_ascii_control())
             .map(|(&chr, _)| (chr, char_name(chr)))
             .collect()
     })

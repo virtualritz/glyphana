@@ -1,7 +1,7 @@
 use crate::categories::{Category, CharacterInspector};
 use glyph_names;
 use std::collections::BTreeMap;
-use stringzilla::StringZilla;
+use stringzilla::szs::{DeviceScope, LevenshteinDistancesUtf8};
 use unicode_case_mapping;
 use unicode_normalization::UnicodeNormalization;
 use unicode_skeleton::UnicodeSkeleton;
@@ -51,10 +51,10 @@ fn to_lowercase_string(s: &str) -> String {
             let mapped = unicode_case_mapping::to_lowercase(c);
             let mut result = String::new();
             for &code in &mapped {
-                if code != 0 {
-                    if let Some(ch) = char::from_u32(code) {
-                        result.push(ch);
-                    }
+                if code != 0
+                    && let Some(ch) = char::from_u32(code)
+                {
+                    result.push(ch);
                 }
             }
             if result.is_empty() {
@@ -114,11 +114,6 @@ impl SearchEngine {
             return full_cache.clone();
         }
 
-        // Check for special search patterns
-        if let Some(results) = Self::search_special_patterns(&params.text, full_cache) {
-            return results;
-        }
-
         // Filter by categories if needed
         let base_cache = if params.search_only_categories {
             Self::filter_by_categories(full_cache, categories, selected_category_id)
@@ -127,7 +122,14 @@ impl SearchEngine {
         };
 
         // Apply search filters
-        Self::apply_search_filters(base_cache, params)
+        let mut results = Self::apply_search_filters(base_cache, params);
+
+        // Merge in special pattern matches (hex codes, decimal codes, etc.)
+        if let Some(special) = Self::search_special_patterns(&params.text, full_cache) {
+            results.extend(special);
+        }
+
+        results
     }
 
     fn search_special_patterns(
@@ -143,50 +145,49 @@ impl SearchEngine {
 
         // Don't treat single character as special pattern if it's a regular letter
         // This allows normal case-sensitive/insensitive search to work
-        if text.chars().count() == 1 {
-            if let Some(chr) = text.chars().next() {
-                // Skip special handling for alphabetic characters to allow case sensitivity
-                if chr.is_alphabetic() {
-                    return None;
-                }
+        if text.chars().count() == 1
+            && let Some(chr) = text.chars().next()
+        {
+            // Skip special handling for alphabetic characters to allow case sensitivity
+            if chr.is_alphabetic() {
+                return None;
+            }
 
-                // For non-alphabetic single characters, try exact match
-                if let Some(name) = full_cache.get(&chr) {
-                    return Some(single_char_result(chr, name));
-                }
+            // For non-alphabetic single characters, try exact match
+            if let Some(name) = full_cache.get(&chr) {
+                return Some(single_char_result(chr, name));
+            }
 
-                // If no exact match, return all characters in the same Unicode block
-                if let Some(block) = unicode_blocks::find_unicode_block(chr) {
-                    let results: BTreeMap<char, String> = full_cache
-                        .iter()
-                        .filter(|(chr, _)| {
-                            let code = **chr as u32;
-                            code >= block.start() && code <= block.end()
-                        })
-                        .map(|(chr, name)| (*chr, name.clone()))
-                        .collect();
+            // If no exact match, return all characters in the same Unicode block
+            if let Some(block) = unicode_blocks::find_unicode_block(chr) {
+                let results: BTreeMap<char, String> = full_cache
+                    .iter()
+                    .filter(|(chr, _)| {
+                        let code = **chr as u32;
+                        code >= block.start() && code <= block.end()
+                    })
+                    .map(|(chr, name)| (*chr, name.clone()))
+                    .collect();
 
-                    if !results.is_empty() {
-                        return Some(results);
-                    }
+                if !results.is_empty() {
+                    return Some(results);
                 }
             }
         }
 
         // Check for hex code search (U+XXXX or 0xXXXX format)
-        if let Some(chr) = Self::parse_hex_code(text) {
-            if let Some(name) = full_cache.get(&chr) {
-                return Some(single_char_result(chr, name));
-            }
+        if let Some(chr) = Self::parse_hex_code(text)
+            && let Some(name) = full_cache.get(&chr)
+        {
+            return Some(single_char_result(chr, name));
         }
 
         // Check for decimal code search
-        if let Ok(code) = text.parse::<u32>() {
-            if let Some(chr) = char::from_u32(code) {
-                if let Some(name) = full_cache.get(&chr) {
-                    return Some(single_char_result(chr, name));
-                }
-            }
+        if let Ok(code) = text.parse::<u32>()
+            && let Some(chr) = char::from_u32(code)
+            && let Some(name) = full_cache.get(&chr)
+        {
+            return Some(single_char_result(chr, name));
         }
 
         None
@@ -196,24 +197,27 @@ impl SearchEngine {
         let cleaned = to_lowercase_string(text.trim());
 
         // Try U+XXXX format
-        if let Some(hex) = cleaned.strip_prefix("u+") {
-            if let Ok(code) = u32::from_str_radix(hex, 16) {
-                return char::from_u32(code);
-            }
+        if let Some(hex) = cleaned.strip_prefix("u+")
+            && let Ok(code) = u32::from_str_radix(hex, 16)
+        {
+            return char::from_u32(code);
         }
 
         // Try 0xXXXX format
-        if let Some(hex) = cleaned.strip_prefix("0x") {
-            if let Ok(code) = u32::from_str_radix(hex, 16) {
-                return char::from_u32(code);
-            }
+        if let Some(hex) = cleaned.strip_prefix("0x")
+            && let Ok(code) = u32::from_str_radix(hex, 16)
+        {
+            return char::from_u32(code);
         }
 
-        // Try plain hex
-        if cleaned.chars().all(|c| c.is_ascii_hexdigit()) && cleaned.len() <= 6 {
-            if let Ok(code) = u32::from_str_radix(&cleaned, 16) {
-                return char::from_u32(code);
-            }
+        // Try plain hex (require at least one digit so purely alphabetic
+        // strings like "ae", "face", "bad" fall through to name search)
+        if cleaned.chars().all(|c| c.is_ascii_hexdigit())
+            && cleaned.chars().any(|c| c.is_ascii_digit())
+            && cleaned.len() <= 6
+            && let Ok(code) = u32::from_str_radix(&cleaned, 16)
+        {
+            return char::from_u32(code);
         }
 
         None
@@ -257,6 +261,16 @@ impl SearchEngine {
         params: &SearchParams,
     ) -> BTreeMap<char, String> {
         const MAX_EDIT_DISTANCE: usize = 2;
+
+        let device = DeviceScope::default().expect("failed to create stringzilla device scope");
+        let levenshtein = LevenshteinDistancesUtf8::new(&device, 0, 1, 1, 1)
+            .expect("failed to create levenshtein engine");
+        let edit_distance = |a: &str, b: &str| -> usize {
+            levenshtein
+                .compute(&device, &[a], &[b])
+                .map(|d| d[0])
+                .unwrap_or(usize::MAX)
+        };
 
         cache
             .into_iter()
@@ -305,53 +319,66 @@ impl SearchEngine {
 
                 // Check if all search terms match with fuzzy logic
                 search_terms.iter().all(|term| {
-                    // First try exact substring match anywhere in the Unicode name
-                    if search_name.contains(term) {
-                        return true;
-                    }
+                    // Handle common terminology mappings with fuzzy matching
+                    // "umlaut" (and typos like "unlaut") -> "diaeresis" (for German umlauts like Ä, ö, ü)
+                    let search_variations = if term.len() >= 5 && edit_distance(term, "umlaut") <= 1
+                    {
+                        // If it's close to "umlaut" (edit distance <= 1), search for both "diaeresis" and the original term
+                        vec!["diaeresis".to_string(), term.clone()]
+                    } else {
+                        vec![term.clone()]
+                    };
 
-                    // Try accent-insensitive matching by normalizing both strings
-                    let normalized_name = normalize_for_matching(&search_name);
-                    let normalized_term = normalize_for_matching(term);
-                    if normalized_name.contains(&normalized_term) {
-                        return true;
-                    }
-
-                    // Also check Adobe glyph name
-                    if let Some(ref an) = adobe_name {
-                        if an.contains(term) {
+                    search_variations.iter().any(|search_term| {
+                        // First try exact substring match anywhere in the Unicode name
+                        if search_name.contains(search_term) {
                             return true;
                         }
 
-                        // Try accent-insensitive matching on Adobe name too
-                        let normalized_adobe = normalize_for_matching(an);
-                        if normalized_adobe.contains(&normalized_term) {
+                        // Try accent-insensitive matching by normalizing both strings
+                        let normalized_name = normalize_for_matching(&search_name);
+                        let normalized_term = normalize_for_matching(search_term);
+                        if normalized_name.contains(&normalized_term) {
                             return true;
                         }
-                    }
 
-                    // Then try fuzzy match on individual words
-                    search_name.split_whitespace().any(|word| {
-                        if word.len() < 3 || term.len() < 3 {
-                            // For very short strings, also check if word starts with term
-                            word == term || word.starts_with(term)
-                        } else {
-                            // Use edit distance for longer strings
-                            let distance = word.sz_edit_distance(term);
-                            // For case sensitive, require exact match or very close match
-                            // but not just case differences
-                            if params.case_sensitive && distance > 0 {
-                                // If they're the same when lowercased, it's just a case difference
-                                // which shouldn't match in case-sensitive mode
-                                if to_lowercase_string(word) == to_lowercase_string(term) {
-                                    false
+                        // Also check Adobe glyph name
+                        if let Some(ref an) = adobe_name {
+                            if an.contains(search_term) {
+                                return true;
+                            }
+
+                            // Try accent-insensitive matching on Adobe name too
+                            let normalized_adobe = normalize_for_matching(an);
+                            if normalized_adobe.contains(&normalized_term) {
+                                return true;
+                            }
+                        }
+
+                        // Then try fuzzy match on individual words
+                        search_name.split_whitespace().any(|word| {
+                            if word.len() < 3 || search_term.len() < 3 {
+                                // For very short strings, also check if word starts with term
+                                word == search_term || word.starts_with(search_term)
+                            } else {
+                                // Use edit distance for longer strings
+                                let distance = edit_distance(word, search_term);
+                                // For case sensitive, require exact match or very close match
+                                // but not just case differences
+                                if params.case_sensitive && distance > 0 {
+                                    // If they're the same when lowercased, it's just a case difference
+                                    // which shouldn't match in case-sensitive mode
+                                    if to_lowercase_string(word) == to_lowercase_string(search_term)
+                                    {
+                                        false
+                                    } else {
+                                        distance <= MAX_EDIT_DISTANCE
+                                    }
                                 } else {
                                     distance <= MAX_EDIT_DISTANCE
                                 }
-                            } else {
-                                distance <= MAX_EDIT_DISTANCE
                             }
-                        }
+                        })
                     })
                 })
             })
@@ -415,6 +442,7 @@ impl SearchEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::glyph::char_name;
     use std::collections::BTreeMap;
 
     fn create_test_cache() -> BTreeMap<char, String> {
@@ -444,7 +472,7 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_search_returns_all() {
+    fn empty_search_returns_all() {
         let cache = create_test_cache();
         let params = SearchParams::new("".to_string(), false, false, false);
 
@@ -455,7 +483,7 @@ mod tests {
     }
 
     #[test]
-    fn test_single_character_exact_match() {
+    fn single_character_exact_match() {
         let cache = create_test_cache();
         let params = SearchParams::new("A".to_string(), false, false, true);
 
@@ -466,7 +494,7 @@ mod tests {
     }
 
     #[test]
-    fn test_case_insensitive_character_search() {
+    fn case_insensitive_character_search() {
         let cache = create_test_cache();
         let params = SearchParams::new("a".to_string(), false, false, false);
 
@@ -478,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn test_case_sensitive_character_search() {
+    fn case_sensitive_character_search() {
         let cache = create_test_cache();
         let params = SearchParams::new("a".to_string(), false, false, true);
 
@@ -490,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_by_name_substring() {
+    fn search_by_name_substring() {
         let cache = create_test_cache();
         let params = SearchParams::new("hyphen".to_string(), false, true, false);
 
@@ -504,7 +532,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_by_name_case_sensitive() {
+    fn search_by_name_case_sensitive() {
         let cache = create_test_cache();
 
         // Test with correct case "Greek"
@@ -523,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_by_name_case_insensitive() {
+    fn search_by_name_case_insensitive() {
         let cache = create_test_cache();
         let params = SearchParams::new("greek".to_string(), false, true, false);
 
@@ -536,7 +564,7 @@ mod tests {
     }
 
     #[test]
-    fn test_hex_code_search() {
+    fn hex_code_search() {
         let cache = create_test_cache();
 
         // Test U+ format
@@ -559,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn test_decimal_code_search() {
+    fn decimal_code_search() {
         let cache = create_test_cache();
 
         // 65 is the decimal code for 'A'
@@ -571,7 +599,7 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_word_search() {
+    fn multiple_word_search() {
         let cache = create_test_cache();
         let params = SearchParams::new("latin letter".to_string(), false, true, false);
 
@@ -586,7 +614,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fuzzy_search_with_typo() {
+    fn fuzzy_search_with_typo() {
         let cache = create_test_cache();
         // "hypen" is 1 edit away from "hyphen" (missing 'h')
         let params = SearchParams::new("hypen".to_string(), false, true, false);
@@ -600,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_emoji() {
+    fn search_emoji() {
         let cache = create_test_cache();
 
         // Search by emoji character
@@ -616,7 +644,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_special_characters() {
+    fn search_special_characters() {
         let cache = create_test_cache();
 
         // Search for space
@@ -628,7 +656,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_with_name_disabled() {
+    fn search_with_name_disabled() {
         let cache = create_test_cache();
 
         // With search_name disabled, "hyphen" should not find anything
@@ -640,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_partial_word_match() {
+    fn search_partial_word_match() {
         let cache = create_test_cache();
 
         // Search for "mag" should find "Magnifying Glass"
@@ -651,7 +679,7 @@ mod tests {
     }
 
     #[test]
-    fn test_combined_flags() {
+    fn combined_flags() {
         let cache = create_test_cache();
 
         // Case sensitive + search names for "latin" (lowercase)
@@ -668,7 +696,7 @@ mod tests {
     }
 
     #[test]
-    fn test_search_mathematical_symbols() {
+    fn search_mathematical_symbols() {
         let cache = create_test_cache();
 
         // Search for plus sign
@@ -680,5 +708,120 @@ mod tests {
         let params = SearchParams::new("plus".to_string(), false, true, false);
         let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
         assert!(results.contains_key(&'+'));
+    }
+
+    #[test]
+    fn umlaut_search() {
+        let mut cache = BTreeMap::new();
+
+        // Add German umlauts with their proper Unicode names
+        cache.insert('Ä', "LATIN CAPITAL LETTER A WITH DIAERESIS".to_string());
+        cache.insert('ä', "LATIN SMALL LETTER A WITH DIAERESIS".to_string());
+        cache.insert('Ö', "LATIN CAPITAL LETTER O WITH DIAERESIS".to_string());
+        cache.insert('ö', "LATIN SMALL LETTER O WITH DIAERESIS".to_string());
+        cache.insert('Ü', "LATIN CAPITAL LETTER U WITH DIAERESIS".to_string());
+        cache.insert('ü', "LATIN SMALL LETTER U WITH DIAERESIS".to_string());
+
+        // Also add regular diaeresis character
+        cache.insert('¨', "DIAERESIS".to_string());
+
+        // Search for "umlaut" should find all German umlauts
+        let params = SearchParams::new("umlaut".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // Should find all German umlauts
+        assert!(results.contains_key(&'Ä'), "Should find Ä");
+        assert!(results.contains_key(&'ä'), "Should find ä");
+        assert!(results.contains_key(&'Ö'), "Should find Ö");
+        assert!(results.contains_key(&'ö'), "Should find ö");
+        assert!(results.contains_key(&'Ü'), "Should find Ü");
+        assert!(results.contains_key(&'ü'), "Should find ü");
+
+        // Should also find the diaeresis character itself
+        assert!(results.contains_key(&'¨'), "Should find diaeresis");
+    }
+
+    #[test]
+    fn umlaut_search_with_typos() {
+        let mut cache = BTreeMap::new();
+
+        // Add German umlauts with their proper Unicode names
+        cache.insert('Ä', "LATIN CAPITAL LETTER A WITH DIAERESIS".to_string());
+        cache.insert('ä', "LATIN SMALL LETTER A WITH DIAERESIS".to_string());
+        cache.insert('Ö', "LATIN CAPITAL LETTER O WITH DIAERESIS".to_string());
+        cache.insert('ö', "LATIN SMALL LETTER O WITH DIAERESIS".to_string());
+        cache.insert('Ü', "LATIN CAPITAL LETTER U WITH DIAERESIS".to_string());
+        cache.insert('ü', "LATIN SMALL LETTER U WITH DIAERESIS".to_string());
+
+        // Test various typos of "umlaut"
+        let typos = vec!["unlaut", "umaut", "umlat", "umlauts"];
+
+        for typo in typos {
+            let params = SearchParams::new(typo.to_string(), false, true, false);
+            let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+            // Should find German umlauts even with typos
+            assert!(results.contains_key(&'Ä'), "Should find Ä for '{}'", typo);
+            assert!(results.contains_key(&'ä'), "Should find ä for '{}'", typo);
+            assert!(results.contains_key(&'Ö'), "Should find Ö for '{}'", typo);
+            assert!(results.contains_key(&'ö'), "Should find ö for '{}'", typo);
+            assert!(results.contains_key(&'Ü'), "Should find Ü for '{}'", typo);
+            assert!(results.contains_key(&'ü'), "Should find ü for '{}'", typo);
+        }
+    }
+
+    #[test]
+    fn search_small_finds_small_letters() {
+        let cache = create_test_cache();
+        // search_name=true, case_sensitive=false
+        let params = SearchParams::new("small".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        // "small" should match names like "Latin Small Letter a", "Greek Small Letter Alpha", etc.
+        assert!(results.contains_key(&'a'), "Should find 'a' (Latin Small Letter a)");
+        assert!(results.contains_key(&'α'), "Should find 'α' (Greek Small Letter Alpha)");
+        assert!(results.contains_key(&'β'), "Should find 'β' (Greek Small Letter Beta)");
+        assert!(!results.contains_key(&'A'), "Should NOT find 'A' (Capital)");
+    }
+
+    #[test]
+    fn search_ae_finds_ae_ligature() {
+        let mut cache = create_test_cache();
+        cache.insert('æ', "Latin Small Letter Ae".to_string());
+        cache.insert('Æ', "Latin Capital Letter Ae".to_string());
+
+        let params = SearchParams::new("ae".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+
+        assert!(results.contains_key(&'æ'), "Should find 'æ' (Latin Small Letter Ae)");
+        assert!(results.contains_key(&'Æ'), "Should find 'Æ' (Latin Capital Letter Ae)");
+    }
+
+    /// Test with real char_name() output to catch name format mismatches
+    #[test]
+    fn search_with_real_char_names() {
+        let mut cache = BTreeMap::new();
+        // Use actual char_name() to get the names the app would use
+        for ch in ['a', 'A', 'æ', 'Æ', 'α', 'β', '+', '1'] {
+            cache.insert(ch, char_name(ch));
+        }
+
+        // Debug: print actual names
+        for (ch, name) in &cache {
+            eprintln!("  {:?} => {:?}", ch, name);
+        }
+
+        // "small" with name search should find lowercase letters
+        let params = SearchParams::new("small".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        eprintln!("Results for 'small': {:?}", results.keys().collect::<Vec<_>>());
+        assert!(!results.is_empty(), "search for 'small' should not be empty");
+        assert!(results.contains_key(&'a'), "Should find 'a' — name is {:?}", cache.get(&'a'));
+
+        // "ae" with name search should find æ
+        let params = SearchParams::new("ae".to_string(), false, true, false);
+        let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
+        eprintln!("Results for 'ae': {:?}", results.keys().collect::<Vec<_>>());
+        assert!(results.contains_key(&'æ'), "Should find 'æ' — name is {:?}", cache.get(&'æ'));
     }
 }

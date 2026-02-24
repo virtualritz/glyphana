@@ -52,28 +52,27 @@ cargo install-update glyphana
 
 #### Clipboard
 
-* Copy an individual character to the clipboard.
-* Copy Unicode as hex in HTML format to the clipboard,
-* Copy UTF-8 as hex to the clipboard.
+- Copy an individual character to the clipboard.
+- Copy Unicode as hex in HTML format to the clipboard,
+- Copy UTF-8 as hex to the clipboard.
 
 #### Inspection
 
-* Inspect individual characters (show name, Unicode, UTF-8).
-* Store character in a persistent collection.
+- Inspect individual characters (show name, Unicode, UTF-8).
+- Store character in a persistent collection.
 
 #### Browsing
 
-* View recently inspected characters.
-* View collected characters.
-* Browse characters by categories.
+- View recently inspected characters.
+- View collected characters.
+- Browse characters by categories.
 
 #### Search
 
-* Search for individual characters.
-  * Consider case.
-* Search against Unicode character name.
-* Search against the Adobe glyph database.
-
+- Search for individual characters.
+  - Consider case.
+- Search against Unicode character name.
+- Search against the Adobe glyph database.
 
 ## Contributing
 
@@ -86,7 +85,7 @@ on, create an issue to later put your PR against. If it is something else not
 in the list also create an issue to collect feedback before you start working
 on it.
 
-Before you do  your final commit that precedes your PR make sure that
+Before you do your final commit that precedes your PR make sure that
 
 ```
 cargo +nightly check --all-features
