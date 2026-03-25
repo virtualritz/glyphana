@@ -143,6 +143,10 @@ pub struct GlyphanaApp {
     // Settings tab
     #[serde(skip)]
     settings_tab: SettingsTab,
+
+    // Toast notifications
+    #[serde(skip)]
+    toasts: egui_notify::Toasts,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
@@ -183,6 +187,7 @@ impl Default for GlyphanaApp {
             show_settings_dialog: false,
             font_manager: FontManager::new().ok(),
             settings_tab: SettingsTab::default(),
+            toasts: egui_notify::Toasts::default().with_anchor(egui_notify::Anchor::BottomRight),
         }
     }
 }
@@ -582,6 +587,9 @@ impl eframe::App for GlyphanaApp {
 
         // Central panel with glyphs
         self.render_central_panel(ctx);
+
+        // Show toast notifications
+        self.toasts.show(ctx);
     }
 }
 
@@ -676,7 +684,8 @@ impl GlyphanaApp {
                     }
 
                     // Case sensitive toggle
-                    if ui.toggle_value(&mut self.case_sensitive, LOWER_UPPER_CASE.to_string())
+                    if ui
+                        .toggle_value(&mut self.case_sensitive, LOWER_UPPER_CASE.to_string())
                         .on_hover_text("Case Sensitive")
                         .changed()
                     {
@@ -685,7 +694,8 @@ impl GlyphanaApp {
 
                     // Search names toggle
                     ui.add_enabled_ui(!self.case_sensitive, |ui| {
-                        if ui.toggle_value(&mut self.search_name, NAME_BADGE.to_string())
+                        if ui
+                            .toggle_value(&mut self.search_name, NAME_BADGE.to_string())
                             .on_hover_text("Search Glyph Names")
                             .changed()
                         {
@@ -694,7 +704,8 @@ impl GlyphanaApp {
                     });
 
                     // Search only in categories toggle
-                    if ui.toggle_value(&mut self.search_only_categories, SUBSET.to_string())
+                    if ui
+                        .toggle_value(&mut self.search_only_categories, SUBSET.to_string())
                         .on_hover_text("Search Only Selected Category")
                         .changed()
                     {
@@ -1189,7 +1200,10 @@ impl GlyphanaApp {
                                     .on_hover_text("Click to copy Unicode")
                                     .clicked()
                                 {
-                                    ui.ctx().copy_text(unicode_string);
+                                    ui.ctx().copy_text(unicode_string.clone());
+                                    self.toasts
+                                        .info(format!("Copied {unicode_string}"))
+                                        .duration(Some(std::time::Duration::from_secs(2)));
                                 }
                                 ui.end_row();
 
@@ -1200,7 +1214,10 @@ impl GlyphanaApp {
                                     .on_hover_text("Click to copy decimal")
                                     .clicked()
                                 {
-                                    ui.ctx().copy_text(decimal_string);
+                                    ui.ctx().copy_text(decimal_string.clone());
+                                    self.toasts
+                                        .info(format!("Copied {decimal_string}"))
+                                        .duration(Some(std::time::Duration::from_secs(2)));
                                 }
                                 ui.end_row();
 
@@ -1211,7 +1228,10 @@ impl GlyphanaApp {
                                     .on_hover_text("Click to copy HTML entity")
                                     .clicked()
                                 {
-                                    ui.ctx().copy_text(html_string);
+                                    ui.ctx().copy_text(html_string.clone());
+                                    self.toasts
+                                        .info(format!("Copied {html_string}"))
+                                        .duration(Some(std::time::Duration::from_secs(2)));
                                 }
                             });
 
@@ -1379,6 +1399,9 @@ impl GlyphanaApp {
                                 // Handle click
                                 if response.clicked() {
                                     ui.ctx().copy_text(self.selected_char.to_string());
+                                    self.toasts
+                                        .info(format!("Copied {}", self.selected_char))
+                                        .duration(Some(std::time::Duration::from_secs(2)));
                                 }
 
                                 // Show tooltip
@@ -1432,6 +1455,9 @@ impl GlyphanaApp {
                     // Handle double-click to copy
                     if response.double_clicked() {
                         ui.ctx().copy_text(chr.to_string());
+                        self.toasts
+                            .info(format!("Copied {chr}"))
+                            .duration(Some(std::time::Duration::from_secs(2)));
                     } else if response.clicked() {
                         self.selected_char = chr;
                         self.add_to_recently_used(chr);
@@ -1748,7 +1774,6 @@ impl GlyphanaApp {
             &self.categories,
             self.selected_category,
         );
-
     }
 
     fn add_to_recently_used(&mut self, chr: char) {

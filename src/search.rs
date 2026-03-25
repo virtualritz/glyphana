@@ -778,9 +778,18 @@ mod tests {
         let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
 
         // "small" should match names like "Latin Small Letter a", "Greek Small Letter Alpha", etc.
-        assert!(results.contains_key(&'a'), "Should find 'a' (Latin Small Letter a)");
-        assert!(results.contains_key(&'α'), "Should find 'α' (Greek Small Letter Alpha)");
-        assert!(results.contains_key(&'β'), "Should find 'β' (Greek Small Letter Beta)");
+        assert!(
+            results.contains_key(&'a'),
+            "Should find 'a' (Latin Small Letter a)"
+        );
+        assert!(
+            results.contains_key(&'α'),
+            "Should find 'α' (Greek Small Letter Alpha)"
+        );
+        assert!(
+            results.contains_key(&'β'),
+            "Should find 'β' (Greek Small Letter Beta)"
+        );
         assert!(!results.contains_key(&'A'), "Should NOT find 'A' (Capital)");
     }
 
@@ -793,8 +802,14 @@ mod tests {
         let params = SearchParams::new("ae".to_string(), false, true, false);
         let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
 
-        assert!(results.contains_key(&'æ'), "Should find 'æ' (Latin Small Letter Ae)");
-        assert!(results.contains_key(&'Æ'), "Should find 'Æ' (Latin Capital Letter Ae)");
+        assert!(
+            results.contains_key(&'æ'),
+            "Should find 'æ' (Latin Small Letter Ae)"
+        );
+        assert!(
+            results.contains_key(&'Æ'),
+            "Should find 'Æ' (Latin Capital Letter Ae)"
+        );
     }
 
     /// Test with real char_name() output to catch name format mismatches
@@ -814,14 +829,28 @@ mod tests {
         // "small" with name search should find lowercase letters
         let params = SearchParams::new("small".to_string(), false, true, false);
         let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
-        eprintln!("Results for 'small': {:?}", results.keys().collect::<Vec<_>>());
-        assert!(!results.is_empty(), "search for 'small' should not be empty");
-        assert!(results.contains_key(&'a'), "Should find 'a' — name is {:?}", cache.get(&'a'));
+        eprintln!(
+            "Results for 'small': {:?}",
+            results.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !results.is_empty(),
+            "search for 'small' should not be empty"
+        );
+        assert!(
+            results.contains_key(&'a'),
+            "Should find 'a' — name is {:?}",
+            cache.get(&'a')
+        );
 
         // "ae" with name search should find æ
         let params = SearchParams::new("ae".to_string(), false, true, false);
         let results = SearchEngine::search(&params, &cache, &[], egui::Id::new("test"));
         eprintln!("Results for 'ae': {:?}", results.keys().collect::<Vec<_>>());
-        assert!(results.contains_key(&'æ'), "Should find 'æ' — name is {:?}", cache.get(&'æ'));
+        assert!(
+            results.contains_key(&'æ'),
+            "Should find 'æ' — name is {:?}",
+            cache.get(&'æ')
+        );
     }
 }

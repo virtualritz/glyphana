@@ -62,11 +62,12 @@ eframe = { version = "0.33", default-features = false, features = [
 ] }
 egui = "0.33"
 egui-file-dialog = "0.12"
+egui-notify = "0.21"
 egui_dnd = "0.14"
 finl_unicode = "1"
 glyph-names = "0.2"
 #google-fonts = { version = "0.1", default-features = false, features = ["static"] }
-google-fonts = { path = "../google-fonts/fnt", default-features = false, features = ["static", "native-tls"] }
+google-fonts = { git = "https://github.com/virtualritz/google-fonts", branch = "feature/optimize-compile-times", default-features = false, features = ["static", "native-tls"] }
 include-flate = "0.3"
 rusttype = "0.9"
 serde = { version = "1", features = ["derive"] }
