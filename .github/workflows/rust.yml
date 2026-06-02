@@ -19,8 +19,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # The repo pins nightly via rust-toolchain.toml, so install the
+      # components on nightly (otherwise cargo fmt/clippy fail: the pinned
+      # toolchain has no rustfmt/clippy). Nothing actually requires nightly --
+      # switching rust-toolchain.toml to stable would make this more robust.
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustfmt, clippy
 
