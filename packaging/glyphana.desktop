@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Glyphana
+GenericName=Unicode Glyph Explorer
+Comment=Quickly find, inspect & collect unicode glyphs
+Exec=glyphana
+Icon=glyphana
+Terminal=false
+Categories=Utility;
+Keywords=unicode;glyph;character;emoji;symbol;font;

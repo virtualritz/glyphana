@@ -13,30 +13,53 @@ repository = "https://github.com/virtualritz/glyphana/"
 #debug = true
 #split-debuginfo = "packed"
 
+# Native desktop packaging via cargo-packager (.deb/.AppImage, .dmg, .msi).
+# See .github/workflows/release.yml for the CI that builds these on tag push.
 [package.metadata.packager]
 before-packaging-command = "cargo build --release"
 product-name = "Glyphana"
 identifier = "com.virtualritz.glyphana"
-icons = ["assets/icon-256.png", "assets/icon-1024.png"]
-resources = ["assets"]
+description = "Quickly find, inspect & collect unicode glyphs"
+long-description = """
+Glyphana is a Unicode glyph explorer. Browse Unicode blocks and categories,
+search glyphs by name or character with fuzzy matching, inspect individual
+glyphs across fonts, and collect the ones you need.
+"""
+homepage = "https://github.com/virtualritz/glyphana"
+authors = ["Moritz Moeller <virtualritz@gmail.com>"]
+publisher = "Moritz Moeller"
+copyright = "Copyright (c) 2026 Moritz Moeller"
+category = "Utility"
+# Fonts and the app icon are embedded in the binary, so no `resources` are
+# bundled. cargo-packager picks the right icon size/format per platform and
+# generates the macOS .icns from these PNGs.
+icons = [
+    "assets/icon-32.png",
+    "assets/icon-128.png",
+    "assets/icon-256.png",
+    "assets/icon-512.png",
+    "assets/icon-1024.png",
+    "assets/icon.ico",
+]
 out-dir = "dist"
 
-# Config for 'cargo dist'
-[workspace.metadata.dist]
-# The preferred cargo-dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.0.3-prerelease04"
-# The preferred Rust toolchain to use in CI (rustup toolchain syntax)
-rust-toolchain-version = "nightly"
-# CI backends to support (see 'cargo dist generate-ci')
-ci = ["github"]
-# The installers to generate for each app
-installers = ["shell", "powershell"]
-# Target platforms to build apps for (Rust target-triple syntax)
-targets = [
-    "x86_64-unknown-linux-gnu",
-    "x86_64-apple-darwin",
-    "x86_64-pc-windows-msvc",
+[package.metadata.packager.deb]
+# Runtime shared libraries the binary links against (GTK tray + windowing).
+depends = [
+    "libgtk-3-0",
+    "libxdo3",
+    "libxkbcommon0",
+    "libwayland-client0",
+    "libayatana-appindicator3-1",
 ]
+section = "utils"
+desktop-template = "packaging/glyphana.desktop"
+
+[package.metadata.packager.dmg]
+# cargo-packager defaults for the macOS .dmg window layout.
+
+[package.metadata.packager.wix]
+# cargo-packager defaults for the Windows .msi (WiX) installer.
 
 [lib]
 name = "glyphana"
