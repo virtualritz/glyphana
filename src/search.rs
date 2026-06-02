@@ -453,7 +453,7 @@ mod tests {
         cache.insert('a', "Latin Small Letter a".to_string());
         cache.insert('-', "Hyphen Minus".to_string()); // Change to match word boundary better
         cache.insert('‐', "Hyphen".to_string());
-        cache.insert('­', "Soft Hyphen".to_string());
+        cache.insert('\u{ad}', "Soft Hyphen".to_string());
         cache.insert('—', "Em Dash".to_string());
         cache.insert('–', "En Dash".to_string());
         cache.insert('α', "Greek Small Letter Alpha".to_string());
@@ -527,7 +527,7 @@ mod tests {
         // Should find all hyphen-related characters
         assert!(results.contains_key(&'-')); // Hyphen Minus
         assert!(results.contains_key(&'‐')); // Hyphen
-        assert!(results.contains_key(&'­')); // Soft Hyphen
+        assert!(results.contains_key(&'\u{ad}')); // Soft Hyphen
         assert!(!results.contains_key(&'—')); // Em Dash (doesn't contain "hyphen")
     }
 
@@ -624,7 +624,7 @@ mod tests {
         // Should still find hyphen-related characters due to fuzzy matching
         assert!(results.contains_key(&'-')); // Hyphen Minus
         assert!(results.contains_key(&'‐')); // Hyphen
-        assert!(results.contains_key(&'­')); // Soft Hyphen
+        assert!(results.contains_key(&'\u{ad}')); // Soft Hyphen
     }
 
     #[test]

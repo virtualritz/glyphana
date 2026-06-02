@@ -466,7 +466,9 @@ impl eframe::App for GlyphanaApp {
     }
 
     /// Called each time the UI needs repainting, which may be many times per second.
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = ui.ctx().clone();
+        let ctx = &ctx;
         // If we should restore the window, keep trying
         if self.should_restore_window {
             // Unminimize and focus
@@ -577,16 +579,16 @@ impl eframe::App for GlyphanaApp {
         }
 
         // Top panel with search and controls
-        self.render_top_panel(ctx);
+        self.render_top_panel(ui);
 
         // Left side panel with categories
-        self.render_side_panel(ctx);
+        self.render_side_panel(ui);
 
         // Right side panel with character preview (always visible)
-        self.render_right_panel(ctx);
+        self.render_right_panel(ui);
 
         // Central panel with glyphs
-        self.render_central_panel(ctx);
+        self.render_central_panel(ui);
 
         // Show toast notifications
         self.toasts.show(ctx);
@@ -595,8 +597,8 @@ impl eframe::App for GlyphanaApp {
 
 // UI rendering methods
 impl GlyphanaApp {
-    fn render_top_panel(&mut self, ctx: &egui::Context) {
-        egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
+    fn render_top_panel(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::top("top_panel").show_inside(ui, |ui| {
             #[allow(deprecated)]
             egui::menu::bar(ui, |ui| {
                 // Hamburger menu
@@ -716,8 +718,8 @@ impl GlyphanaApp {
         });
     }
 
-    fn render_side_panel(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::left("side_panel").show(ctx, |ui| {
+    fn render_side_panel(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::left("side_panel").show_inside(ui, |ui| {
             ui.heading("Categories");
 
             // Handle drag and drop
@@ -796,7 +798,7 @@ impl GlyphanaApp {
                         let font_name_clone = font_name.clone();
                         let font_url_clone = font_url.to_string();
                         let font_manager_clone = font_manager.clone();
-                        let ctx_clone = ctx.clone();
+                        let ctx_clone = ui.ctx().clone();
 
                         // Download font in background thread
                         std::thread::spawn(move || {
@@ -1153,8 +1155,8 @@ impl GlyphanaApp {
     }
     */
 
-    fn render_right_panel(&mut self, ctx: &egui::Context) {
-        egui::SidePanel::right("character_preview").show(ctx, |ui| {
+    fn render_right_panel(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::right("character_preview").show_inside(ui, |ui| {
             // Large character preview with paint_glyph
             let rect = ui.available_rect_before_wrap();
             let scale = rect.width().min(rect.height() * 0.4);
@@ -1422,8 +1424,8 @@ impl GlyphanaApp {
     }
     */
 
-    fn render_central_panel(&mut self, ctx: &egui::Context) {
-        egui::CentralPanel::default().show(ctx, |ui| {
+    fn render_central_panel(&mut self, ui: &mut egui::Ui) {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             // Always show the glyph grid
             self.render_glyph_grid(ui);
         });
@@ -1820,7 +1822,7 @@ impl GlyphanaApp {
             }
         };
 
-        let visuals = &ui.ctx().style().visuals;
+        let visuals = &ui.ctx().global_style().visuals;
         let dark_mode = visuals.dark_mode;
 
         let glyph_color = if dark_mode {
