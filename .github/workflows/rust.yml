@@ -31,10 +31,9 @@ jobs:
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
 
-      # Build-time deps: GTK/appindicator (tray), xkbcommon/wayland/xdo
-      # (windowing + tray), and openssl/pkg-config (google-fonts -> reqwest
-      # -> native-tls -> openssl-sys). Without these, build scripts fail with
-      # exit code 100.
+      # Build-time deps for the GTK tray (gtk3/appindicator) and windowing
+      # (xkbcommon/wayland/xdo); pkg-config locates them. TLS is pure-Rust
+      # (rustls/ring via the google-fonts fork), so no libssl is needed.
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -44,7 +43,6 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libayatana-appindicator3-dev \
-            libssl-dev \
             pkg-config
 
       - name: Check formatting

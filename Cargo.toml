@@ -96,7 +96,9 @@ glyph-names = "0.2"
 #google-fonts = { version = "0.1", default-features = false, features = ["static"] }
 google-fonts = { git = "https://github.com/virtualritz/google-fonts", branch = "feature/optimize-compile-times", default-features = false, features = [
     "static",
-    "native-tls",
+    # Pure-Rust TLS (rustls) so reqwest doesn't pull in openssl-sys / a
+    # system libssl. Avoids the libssl-dev build dependency entirely.
+    "rustls-tls",
 ] }
 include-flate = "0.3"
 rusttype = "0.9"

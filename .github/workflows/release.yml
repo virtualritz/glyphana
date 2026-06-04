@@ -69,7 +69,6 @@ jobs:
             libxkbcommon-dev \
             libwayland-dev \
             libayatana-appindicator3-dev \
-            libssl-dev \
             pkg-config \
             patchelf \
             libfuse2
