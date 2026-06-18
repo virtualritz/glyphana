@@ -815,26 +815,18 @@ impl GlyphanaApp {
                         std::thread::spawn(move || {
                             match font_manager_clone.load_font(&font_name_clone, &font_url_clone) {
                                 Ok(font_data) => {
-                                    // Read existing font definitions and add the new font
-                                    let mut font_definitions =
-                                        ctx_clone.fonts(|f| f.definitions().clone());
-
-                                    font_definitions.font_data.insert(
-                                        font_name_clone.clone(),
-                                        egui::FontData::from_owned(font_data).into(),
+                                    // AIDEV-NOTE: queue via `add_font` (applied
+                                    // next pass) instead of read-modify-write on
+                                    // `ctx.fonts()`. The latter panics when called
+                                    // from this download thread before the first
+                                    // `Context::run()` (e.g. a cached font resolves
+                                    // before the first frame), and its clobbering
+                                    // set_fonts also raced concurrent downloads.
+                                    Self::install_downloaded_font(
+                                        &ctx_clone,
+                                        &font_name_clone,
+                                        font_data,
                                     );
-
-                                    // Add to proportional family
-                                    font_definitions
-                                        .families
-                                        .entry(egui::FontFamily::Proportional)
-                                        .or_default()
-                                        .push(font_name_clone.clone());
-
-                                    ctx_clone.set_fonts(font_definitions);
-                                    ctx_clone.request_repaint();
-
-                                    eprintln!("Successfully loaded font: {}", font_name_clone);
                                 }
                                 Err(e) => {
                                     eprintln!("Failed to download font {}: {}", font_name_clone, e);
@@ -1741,6 +1733,26 @@ impl GlyphanaApp {
     }
 
     /// Download fonts for initially visible categories
+    /// Install a downloaded font as a lowest-priority fallback in the
+    /// proportional family. Uses [`egui::Context::add_font`], which queues the
+    /// font in memory and applies it at the start of the next pass -- so it is
+    /// safe to call from a background download thread even before the first
+    /// frame. (`Context::fonts()` panics until the first `Context::run()`.)
+    fn install_downloaded_font(ctx: &egui::Context, name: &str, data: Vec<u8>) {
+        use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+
+        ctx.add_font(FontInsert::new(
+            name,
+            egui::FontData::from_owned(data),
+            vec![InsertFontFamily {
+                family: egui::FontFamily::Proportional,
+                priority: FontPriority::Lowest,
+            }],
+        ));
+        ctx.request_repaint();
+        eprintln!("Successfully loaded font: {name}");
+    }
+
     fn initialize_required_fonts(&self, ctx: &egui::Context) {
         if let Some(ref font_manager) = self.font_manager {
             // Check all visible categories for required fonts
@@ -1763,26 +1775,18 @@ impl GlyphanaApp {
                             );
                             match font_manager_clone.load_font(&font_name_clone, &font_url_clone) {
                                 Ok(font_data) => {
-                                    // Read existing font definitions and add the new font
-                                    let mut font_definitions =
-                                        ctx_clone.fonts(|f| f.definitions().clone());
-
-                                    font_definitions.font_data.insert(
-                                        font_name_clone.clone(),
-                                        egui::FontData::from_owned(font_data).into(),
+                                    // AIDEV-NOTE: queue via `add_font` (applied
+                                    // next pass) instead of read-modify-write on
+                                    // `ctx.fonts()`. The latter panics when called
+                                    // from this download thread before the first
+                                    // `Context::run()` (e.g. a cached font resolves
+                                    // before the first frame), and its clobbering
+                                    // set_fonts also raced concurrent downloads.
+                                    Self::install_downloaded_font(
+                                        &ctx_clone,
+                                        &font_name_clone,
+                                        font_data,
                                     );
-
-                                    // Add to proportional family
-                                    font_definitions
-                                        .families
-                                        .entry(egui::FontFamily::Proportional)
-                                        .or_default()
-                                        .push(font_name_clone.clone());
-
-                                    ctx_clone.set_fonts(font_definitions);
-                                    ctx_clone.request_repaint();
-
-                                    eprintln!("Successfully loaded font: {}", font_name_clone);
                                 }
                                 Err(e) => {
                                     eprintln!("Failed to download font {}: {}", font_name_clone, e);
