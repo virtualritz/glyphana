@@ -90,6 +90,11 @@ pub struct GlyphanaApp {
     recently_used: VecDeque<char>,
     recently_used_max_len: usize,
     collection: HashSet<char>,
+    // The string assembled in the bottom compose bar. Persisted so an
+    // in-progress string survives a restart or a minimize-to-tray. `default`
+    // keeps older persisted state (which lacks this field) deserializable.
+    #[serde(default)]
+    compose_buffer: String,
     selected_category: egui::Id,
     ui_search_text: String,
     #[serde(skip)]
@@ -172,6 +177,7 @@ impl Default for GlyphanaApp {
             recently_used: Default::default(),
             recently_used_max_len: 1000,
             collection: Default::default(),
+            compose_buffer: Default::default(),
             selected_category: recently_used_id(),
             categories: create_default_categories(),
             full_glyph_cache: Default::default(),
@@ -586,6 +592,11 @@ impl eframe::App for GlyphanaApp {
 
         // Right side panel with character preview (always visible)
         self.render_right_panel(ui);
+
+        // Bottom bar for assembling a string from picked glyphs. Registered
+        // before the central panel so it reserves its strip first and the grid
+        // fills the rest.
+        self.render_compose_bar(ui);
 
         // Central panel with glyphs
         self.render_central_panel(ui);
@@ -1431,6 +1442,60 @@ impl GlyphanaApp {
         });
     }
 
+    /// Bottom bar that assembles a string from picked glyphs (double-click a
+    /// glyph in the grid to append it). The text field is fully editable; the
+    /// Copy button puts the whole string on the clipboard.
+    fn render_compose_bar(&mut self, ui: &mut egui::Ui) {
+        egui::Panel::bottom("compose_bar").show_inside(ui, |ui| {
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                let has_text = !self.compose_buffer.is_empty();
+
+                // AIDEV-NOTE: char count / backspace are char-based, so a
+                // combining mark counts as its own unit and ⌫ may remove only
+                // the mark rather than the whole grapheme. Fine for v1.
+                // AIDEV-TODO: grapheme-aware editing (needs unicode-segmentation).
+                if ui
+                    .add_enabled(has_text, egui::Button::new("Copy"))
+                    .on_hover_text("Copy the whole string to the clipboard")
+                    .clicked()
+                {
+                    ui.ctx().copy_text(self.compose_buffer.clone());
+                    self.toasts
+                        .info("Copied string")
+                        .duration(Some(std::time::Duration::from_secs(2)));
+                }
+
+                if ui
+                    .add_enabled(has_text, egui::Button::new("⌫"))
+                    .on_hover_text("Delete last character")
+                    .clicked()
+                {
+                    self.compose_buffer.pop();
+                }
+
+                if ui
+                    .add_enabled(has_text, egui::Button::new("Clear"))
+                    .on_hover_text("Clear the string")
+                    .clicked()
+                {
+                    self.compose_buffer.clear();
+                }
+
+                let count = self.compose_buffer.chars().count();
+                ui.label(format!("{count}"))
+                    .on_hover_text("Characters in string");
+
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.compose_buffer)
+                        .hint_text("Double-click glyphs to build a string")
+                        .desired_width(f32::INFINITY),
+                );
+            });
+            ui.add_space(2.0);
+        });
+    }
+
     fn render_glyph_grid(&mut self, ui: &mut egui::Ui) {
         let glyphs_to_show = self.glyphs_to_show();
 
@@ -1454,11 +1519,14 @@ impl GlyphanaApp {
                     let response = ui
                         .allocate_response(egui::vec2(base_size, base_size), egui::Sense::click());
 
-                    // Handle double-click to copy
+                    // AIDEV-NOTE: double-click now appends to the compose bar
+                    // (was copy-to-clipboard). Copying a single char/codepoint
+                    // lives on the right-panel codepoint buttons; copying the
+                    // assembled string lives on the compose bar's Copy button.
                     if response.double_clicked() {
-                        ui.ctx().copy_text(chr.to_string());
+                        self.compose_buffer.push(chr);
                         self.toasts
-                            .info(format!("Copied {chr}"))
+                            .info(format!("Added {chr} to string"))
                             .duration(Some(std::time::Duration::from_secs(2)));
                     } else if response.clicked() {
                         self.selected_char = chr;
@@ -1504,7 +1572,7 @@ impl GlyphanaApp {
                         ui.label(&name);
                         ui.label(format!("U+{:04X}", chr as u32));
                         ui.separator();
-                        ui.label("Double-click to copy");
+                        ui.label("Double-click to add to string");
                     });
                 }
             });
